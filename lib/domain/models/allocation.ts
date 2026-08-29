@@ -305,7 +305,7 @@ export function deriveTableBillSummary(
 
   // Calculate payments per diner
   const validPayments = session.payments.filter(
-    (p: Payment) => p.status === "authorized" || p.status === "captured"
+    (p: Payment) => p.status === "authorized" || p.status === "captured" || (p.status as string) === "completed"
   );
   const dinerPaidMap = new Map<string, number>();
 

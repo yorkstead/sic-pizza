@@ -63,16 +63,20 @@ export type Order = z.infer<typeof orderSchema>;
 
 export function calculateOrderItemUnitCents(
   basePriceCents: number,
-  modifiers: readonly SelectedModifier[]
+  modifiers: readonly SelectedModifier[] = []
 ): number {
-  const modSum = modifiers.reduce((acc, m) => acc + m.priceCents, 0);
+  const modSum = (modifiers ?? []).reduce((acc, m) => acc + (m.priceCents || 0), 0);
   return basePriceCents + modSum;
 }
 
 export function calculateOrderItemTotalCents(item: {
-  basePriceCents: number;
-  selectedModifiers: readonly SelectedModifier[];
+  basePriceCents?: number;
+  unitPriceCents?: number;
+  selectedModifiers?: readonly SelectedModifier[];
+  modifiers?: readonly SelectedModifier[];
   quantity: number;
 }): number {
-  return calculateOrderItemUnitCents(item.basePriceCents, item.selectedModifiers) * item.quantity;
+  const base = item.basePriceCents ?? item.unitPriceCents ?? 0;
+  const mods = item.selectedModifiers ?? item.modifiers ?? [];
+  return calculateOrderItemUnitCents(base, mods) * item.quantity;
 }

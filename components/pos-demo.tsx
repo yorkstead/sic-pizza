@@ -9,7 +9,8 @@ import {
   QrCode,
   Store,
   Lock,
-  Bell
+  Bell,
+  Sparkles
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,11 +20,15 @@ import {
   TableSessionService,
   projectTableSession,
   type TableSession,
-  type DomainEvent
+  type DomainEvent,
+  evaluateAttentionRules,
+  DEFAULT_ATTENTION_CONFIG,
+  type AttentionConfig
 } from "@/lib/domain";
 import { FloorView } from "./server/floor-view";
 import { TableSessionView } from "./server/table-session-view";
 import { AttentionQueue } from "./server/attention-queue";
+import { DoThisNext } from "./server/do-this-next";
 
 const RESTAURANT_ID = "sic_pizza_org";
 const LOCATION_ID = "loc_downtown";
@@ -52,8 +57,10 @@ export function PosDemo() {
   const [authenticated, setAuthenticated] = useState(false);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
-  const [view, setView] = useState<"floor" | "queue" | "kds" | "join" | "history">("floor");
+  const [view, setView] = useState<"floor" | "dothisnext" | "queue" | "kds" | "join" | "history">("floor");
   const [selectedTableId, setSelectedTableId] = useState<string | null>("tbl_11");
+  const [attentionConfig, setAttentionConfig] = useState<AttentionConfig>(DEFAULT_ATTENTION_CONFIG);
+  const [dismissedItemIds, setDismissedItemIds] = useState<Set<string>>(new Set());
 
   // Repository & Domain Service instances
   const repo = useMemo(() => new InMemoryTableSessionRepository(), []);
@@ -332,6 +339,17 @@ export function PosDemo() {
     ).length;
   }, [allFloorRequests]);
 
+  const attentionItems = useMemo(() => {
+    return evaluateAttentionRules(sessions, attentionConfig, {
+      assignedEmployeeId: SERVER_ID,
+      dismissedIds: dismissedItemIds
+    });
+  }, [sessions, attentionConfig, dismissedItemIds]);
+
+  const urgentAttentionCount = useMemo(() => {
+    return attentionItems.filter((i) => i.severity === "URGENT" || i.severity === "HIGH").length;
+  }, [attentionItems]);
+
   const floorTableItems = useMemo(() => {
     return STATIC_TABLES.map((t) => {
       const session = activeSessionsByTable.get(t.tableId);
@@ -421,6 +439,28 @@ export function PosDemo() {
         </div>
 
         <nav className="mt-8 space-y-1.5">
+          <Button
+            variant={view === "dothisnext" ? "secondary" : "ghost"}
+            className="w-full justify-between"
+            onClick={() => setView("dothisnext")}
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles className="size-4 text-primary" />
+              <span className="font-bold">Do This Next</span>
+            </div>
+            {attentionItems.length > 0 && (
+              <Badge
+                className={`px-1.5 py-0 text-[10px] font-bold ${
+                  urgentAttentionCount > 0
+                    ? "bg-red-500 text-white animate-pulse"
+                    : "bg-primary text-primary-foreground"
+                }`}
+              >
+                {attentionItems.length}
+              </Badge>
+            )}
+          </Button>
+
           <Button
             variant={view === "floor" ? "secondary" : "ghost"}
             className="w-full justify-start"
@@ -512,6 +552,58 @@ export function PosDemo() {
 
         {/* Dynamic Main Body Content */}
         <div className="p-4 md:p-7">
+          {view === "dothisnext" && (
+            <DoThisNext
+              items={attentionItems}
+              currentServerId={SERVER_ID}
+              config={attentionConfig}
+              onUpdateConfig={(newCfg) => setAttentionConfig((prev) => ({ ...prev, ...newCfg }))}
+              onDismissItem={(id) => setDismissedItemIds((prev) => new Set([...prev, id]))}
+              onSelectTable={(tableId) => {
+                setSelectedTableId(tableId);
+                setView("floor");
+              }}
+              onExecuteAction={async (item) => {
+                if (item.ruleKey === "GUEST_PROPOSAL_PENDING") {
+                  setSelectedTableId(item.tableId);
+                  setView("floor");
+                } else if (
+                  item.ruleKey === "REQUEST_UNACKNOWLEDGED" ||
+                  item.ruleKey === "REQUEST_OVERDUE_OR_ESCALATED"
+                ) {
+                  await service.acknowledgeGuestRequest(item.sessionId, item.source.id, {
+                    actorType: "employee",
+                    actorId: SERVER_ID
+                  });
+                  triggerUpdate();
+                } else if (item.ruleKey === "FOOD_ISSUE_ALERT") {
+                  setSelectedTableId(item.tableId);
+                  setView("floor");
+                } else if (item.ruleKey === "ITEMS_READY_FOR_DELIVERY") {
+                  const targetSession = sessions.find((s) => s.id === item.sessionId);
+                  const ticket = targetSession?.tickets.find((t) => t.id === item.source.id);
+                  if (ticket) {
+                    await service.deliverTicketItems(
+                      item.sessionId,
+                      ticket.id,
+                      ticket.items.map((i) => i.orderItemId)
+                    );
+                    triggerUpdate();
+                  }
+                } else if (item.ruleKey === "COURSE_PACING_GAP") {
+                  await service.fireCourse(item.sessionId, "mains", {
+                    actorType: "employee",
+                    actorId: SERVER_ID
+                  });
+                  triggerUpdate();
+                } else {
+                  setSelectedTableId(item.tableId);
+                  setView("floor");
+                }
+              }}
+            />
+          )}
+
           {view === "floor" && (
             <>
               {selectedTableId && currentSession && currentProjection ? (
@@ -1030,8 +1122,25 @@ export function PosDemo() {
       {/* Fixed Mobile Bottom Navigation Bar */}
       <nav
         aria-label="Server primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-background/95 px-1 py-2 backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t bg-background/95 px-1 py-2 backdrop-blur lg:hidden"
       >
+        <button
+          onClick={() => setView("dothisnext")}
+          className={`relative flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-bold ${
+            view === "dothisnext" ? "bg-secondary text-primary" : "text-muted-foreground"
+          }`}
+        >
+          <Sparkles className="size-4" />
+          Next
+          {attentionItems.length > 0 && (
+            <span
+              className={`absolute top-1.5 right-2 flex size-2 rounded-full ${
+                urgentAttentionCount > 0 ? "bg-red-500 animate-ping" : "bg-primary"
+              }`}
+            />
+          )}
+        </button>
+
         <button
           onClick={() => {
             setView("floor");
@@ -1054,7 +1163,7 @@ export function PosDemo() {
           <Bell className="size-4" />
           Queue
           {activeRequestCount > 0 && (
-            <span className="absolute top-1.5 right-3 flex size-2 rounded-full bg-primary" />
+            <span className="absolute top-1.5 right-2 flex size-2 rounded-full bg-primary" />
           )}
         </button>
 
