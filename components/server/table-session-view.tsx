@@ -38,6 +38,7 @@ import { SplitItemDialog } from "./split-item-dialog";
 import { CreateRequestDialog } from "./create-request-dialog";
 import { deriveRequestAgeMinutes, deriveRequestEscalation } from "@/lib/domain/models/request";
 import type { RequestCategory } from "@/lib/domain/models/request";
+import { deriveTableCoursePacing } from "@/lib/domain/models/pacing";
 
 interface TableSessionViewProps {
   session: TableSession;
@@ -135,12 +136,17 @@ export function TableSessionView({
   const [selectedTipPercent, setSelectedTipPercent] = useState<number>(20);
 
   // Group items by course
-  const courses: Course[] = ["drinks", "starters", "mains", "desserts"];
+  const courses: Course[] = ["drinks", "starters", "salad", "mains", "desserts", "custom"];
   const courseLabels: Record<Course, string> = {
     drinks: "Drinks & Cocktails",
     starters: "Starters & Small Plates",
-    mains: "Pizzas & Entrees",
-    desserts: "Desserts"
+    appetizer: "Appetizers",
+    salad: "Salads & Greens",
+    mains: "Pizzas & Entrées",
+    entree: "Entrées",
+    desserts: "Desserts & Pastry",
+    dessert: "Desserts",
+    custom: "Special / Chef Course"
   };
 
   const activeItems = session.items.filter((i) => i.status !== "voided");
@@ -307,6 +313,90 @@ export function TableSessionView({
           </div>
         </div>
       )}
+
+      {/* Course Pacing Directive & Coordination Bar */}
+      {(() => {
+        const pacing = deriveTableCoursePacing(session);
+        if (pacing.courses.length === 0) return null;
+
+        return (
+          <div className="rounded-2xl border bg-card p-3.5 shadow-sm space-y-3">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-primary flex items-center gap-1">
+                  <Flame className="size-3.5" />
+                  Course Pacing Engine
+                </span>
+                {pacing.hasPacingAlert && (
+                  <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[9px] font-mono">
+                    Attention
+                  </Badge>
+                )}
+              </div>
+              <span className="text-xs font-bold text-foreground">
+                {pacing.serverPacingMessage}
+              </span>
+            </div>
+
+            {/* Course Progression Stepper */}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {pacing.courses.map((cs) => {
+                const isUnfired = cs.status === "unfired";
+                const isDelivered = cs.status === "delivered";
+                const isReady = cs.status === "ready";
+                const isInPrep = cs.status === "in_prep" || cs.status === "fired";
+
+                return (
+                  <div
+                    key={cs.course}
+                    className={`rounded-xl border p-2.5 flex flex-col justify-between text-xs transition ${
+                      isDelivered
+                        ? "bg-secondary/40 border-border text-muted-foreground"
+                        : isReady
+                        ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
+                        : isInPrep
+                        ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
+                        : cs.shouldFireNow
+                        ? "bg-primary/10 border-primary text-foreground shadow-xs animate-pulse"
+                        : "bg-card border-border text-foreground"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <span className="font-mono font-bold uppercase text-[11px] block">
+                          {cs.course}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {cs.itemsCount} item{cs.itemsCount > 1 ? "s" : ""} · ~{cs.estimatedPrepMinutes}m
+                        </span>
+                      </div>
+                      <Badge className="text-[9px] font-mono px-1 py-0 uppercase">
+                        {cs.status}
+                      </Badge>
+                    </div>
+
+                    <div className="mt-2 pt-1 border-t border-border/50 flex items-center justify-between">
+                      <span className="text-[10px] font-mono text-muted-foreground uppercase">
+                        {cs.pacingMode}
+                      </span>
+                      {isUnfired && (
+                        <Button
+                          size="default"
+                          variant="secondary"
+                          className="h-6 px-2 text-[10px] font-bold bg-primary text-primary-foreground hover:bg-primary/90"
+                          onClick={() => onFireCourse(cs.course)}
+                        >
+                          Fire Now
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Primary Action Button (Thumb zone) */}
       {primaryAction && (

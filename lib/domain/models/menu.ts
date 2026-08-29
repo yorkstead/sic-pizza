@@ -1,7 +1,27 @@
 import { z } from "zod";
 
-export const courseSchema = z.enum(["drinks", "starters", "mains", "desserts"]);
+export const courseSchema = z.enum([
+  "drinks",
+  "starters",
+  "appetizer",
+  "salad",
+  "mains",
+  "entree",
+  "desserts",
+  "dessert",
+  "custom"
+]);
 export type Course = z.infer<typeof courseSchema>;
+
+export function normalizeCourse(course: string): Course {
+  const c = course.toLowerCase().trim();
+  if (c === "drink" || c === "drinks" || c === "bar") return "drinks";
+  if (c === "starter" || c === "starters" || c === "app" || c === "appetizer" || c === "appetizers") return "starters";
+  if (c === "salad" || c === "salads") return "salad";
+  if (c === "main" || c === "mains" || c === "entree" || c === "entrees") return "mains";
+  if (c === "dessert" || c === "desserts" || c === "pastry") return "desserts";
+  return "custom";
+}
 
 export const modifierOptionSchema = z.object({
   id: z.string(),
