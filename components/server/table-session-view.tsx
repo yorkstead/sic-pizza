@@ -14,7 +14,9 @@ import {
   AlertCircle,
   QrCode,
   Sparkles,
-  ArrowRightLeft
+  ArrowRightLeft,
+  PieChart,
+  UserCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,20 +30,40 @@ import type {
 import type { PizzaSelection } from "@/lib/demo/sic-pizza/catalog";
 import type { Course } from "@/lib/domain/models/menu";
 import type { RequestType } from "@/lib/domain/models/request";
+import type { SplitMode } from "@/lib/domain/models/order";
 import { StageBadge } from "./stage-badge";
 import { AddItemDialog } from "./add-item-dialog";
 import { VoidItemDialog } from "./void-item-dialog";
 import { TransferTableDialog } from "./transfer-table-dialog";
+import { SplitItemDialog } from "./split-item-dialog";
 
 interface TableSessionViewProps {
   session: TableSession;
   projection: TableSessionProjection;
   currentServerId: string;
   onBackToFloor: () => void;
-  onAddPizza: (pizza: PizzaSelection, dinerId?: string, course?: Course) => void;
-  onAddStandardItem: (name: string, priceCents: number, course: Course, stationId: string, dinerId?: string) => void;
+  onAddPizza: (
+    pizza: PizzaSelection,
+    ownership: { splitMode: SplitMode; assignedDinerIds: string[] },
+    course?: Course
+  ) => void;
+  onAddStandardItem: (
+    name: string,
+    priceCents: number,
+    course: Course,
+    stationId: string,
+    ownership: { splitMode: SplitMode; assignedDinerIds: string[] }
+  ) => void;
   onApproveItem: (itemId: string) => void;
   onVoidItem: (itemId: string, reason: string) => void;
+  onUpdateItemOwnership: (
+    itemId: string,
+    ownership: {
+      splitMode: SplitMode;
+      assignedDinerIds: string[];
+      customShares?: Record<string, number>;
+    }
+  ) => void;
   onFireCourse: (course: Course) => void;
   onAcceptTicket: (ticketId: string) => void;
   onStartTicketItem: (ticketId: string, orderItemId: string) => void;
@@ -52,6 +74,7 @@ interface TableSessionViewProps {
   onCreateGuestRequest: (type: RequestType, notes?: string) => void;
   onSetStage: (stage: DiningStage) => void;
   onProcessPayment: (checkId: string, amountCents: number, tipCents: number) => void;
+  onProcessDinerPayment: (dinerId: string, amountCents: number, tipCents: number) => void;
   onCreateCheck: (title: string, dinerIds?: string[]) => void;
   onTransferTable: (toEmployeeId: string, reason: string) => void;
   onAddDiner: (displayName: string) => void;
@@ -67,6 +90,7 @@ export function TableSessionView({
   onAddStandardItem,
   onApproveItem,
   onVoidItem,
+  onUpdateItemOwnership,
   onFireCourse,
   onAcceptTicket,
   onStartTicketItem,
@@ -77,6 +101,7 @@ export function TableSessionView({
   onCreateGuestRequest,
   onSetStage,
   onProcessPayment,
+  onProcessDinerPayment,
   onCreateCheck,
   onTransferTable,
   onAddDiner,
@@ -87,6 +112,13 @@ export function TableSessionView({
   >("orders");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [voidingItem, setVoidingItem] = useState<{ id: string; name: string } | null>(null);
+  const [splittingItem, setSplittingItem] = useState<{
+    id: string;
+    name: string;
+    totalCents: number;
+    splitMode: SplitMode;
+    assignedDinerIds: string[];
+  } | null>(null);
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [newDinerName, setNewDinerName] = useState("");
   const [isAddingDiner, setIsAddingDiner] = useState(false);
@@ -138,7 +170,7 @@ export function TableSessionView({
     };
   } else if (openRequests.some((r) => r.type === "drop_check")) {
     primaryAction = {
-      label: "Present Check to Table",
+      label: "Present Pre-Split Check",
       onClick: () => {
         if (session.checks.length === 0) {
           onCreateCheck("Full Table Check");
@@ -319,7 +351,7 @@ export function TableSessionView({
             activeTab === "checks" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          <span>Pay</span>
+          <span>Split Bill</span>
           <span className="text-[10px] opacity-80">{money(projection.totalCents)}</span>
         </button>
 
@@ -398,8 +430,29 @@ export function TableSessionView({
 
                   <CardContent className="divide-y p-0">
                     {courseItems.map((item) => {
-                      const diner = session.diners.find((d) => d.id === item.dinerId);
                       const isProposed = item.status === "proposed";
+                      const itemTotalCents =
+                        (item.basePriceCents +
+                          item.selectedModifiers.reduce((acc, m) => acc + m.priceCents, 0)) *
+                        item.quantity;
+
+                      // Derive ownership label
+                      let ownershipLabel = "Table";
+                      if (item.splitMode === "whole_table") {
+                        ownershipLabel = `Whole Table (${session.diners.length} guests)`;
+                      } else if (item.splitMode === "shared_diners" && item.assignedDinerIds.length > 0) {
+                        const names = item.assignedDinerIds
+                          .map((id) => session.diners.find((d) => d.id === id)?.displayName || "Guest")
+                          .join(", ");
+                        ownershipLabel = `Shared: ${names}`;
+                      } else {
+                        const singleDiner = session.diners.find(
+                          (d) => d.id === (item.dinerId || item.assignedDinerIds[0])
+                        );
+                        ownershipLabel = singleDiner
+                          ? `${singleDiner.displayName}${singleDiner.seatNumber ? ` (Seat ${singleDiner.seatNumber})` : ""}`
+                          : "Table";
+                      }
 
                       return (
                         <div
@@ -427,15 +480,25 @@ export function TableSessionView({
                                 </Badge>
                               </div>
 
-                              {/* Diner Attribution */}
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                {diner && (
-                                  <span className="font-medium text-foreground">
-                                    {diner.displayName}{" "}
-                                    {diner.seatNumber ? `(Seat ${diner.seatNumber})` : ""}
-                                  </span>
-                                )}
-                                <span className="font-mono text-[11px]">
+                              {/* Diner Ownership Badge & Split Action */}
+                              <div className="flex items-center gap-2 text-xs">
+                                <button
+                                  onClick={() =>
+                                    setSplittingItem({
+                                      id: item.id,
+                                      name: item.name,
+                                      totalCents: itemTotalCents,
+                                      splitMode: item.splitMode || "single",
+                                      assignedDinerIds: item.assignedDinerIds || (item.dinerId ? [item.dinerId] : [])
+                                    })
+                                  }
+                                  className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 font-medium text-foreground hover:bg-muted transition"
+                                  title="Click to change ownership / split"
+                                >
+                                  <PieChart className="size-3 text-primary" />
+                                  <span>{ownershipLabel}</span>
+                                </button>
+                                <span className="font-mono text-[11px] text-muted-foreground">
                                   Station: {item.stationId}
                                 </span>
                               </div>
@@ -461,11 +524,7 @@ export function TableSessionView({
                             {/* Price & Actions */}
                             <div className="text-right">
                               <span className="font-mono text-sm font-bold text-foreground">
-                                {money(
-                                  (item.basePriceCents +
-                                    item.selectedModifiers.reduce((acc, m) => acc + m.priceCents, 0)) *
-                                    item.quantity
-                                )}
+                                {money(itemTotalCents)}
                               </span>
 
                               <div className="mt-2 flex items-center justify-end gap-1.5">
@@ -754,106 +813,242 @@ export function TableSessionView({
         </div>
       )}
 
-      {/* Tab 4: Checks & Payments */}
+      {/* Tab 4: Pre-Split Checks & Diner Ownership Breakdown */}
       {activeTab === "checks" && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-black text-foreground">Checks & Settlement</h2>
-            {session.checks.length === 0 && (
-              <Button
-                size="default"
-                onClick={() => onCreateCheck("Full Table Check")}
-              >
-                + Create Check
-              </Button>
-            )}
+        <div className="space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-primary">
+                Continuous Diner Allocation
+              </span>
+              <h2 className="text-xl font-black text-foreground">
+                The Pre-Split Check
+              </h2>
+            </div>
+            <Badge className="font-mono">
+              {projection.tableSummary.isFullyPaid ? "Fully Settled" : "Open Balance"}
+            </Badge>
           </div>
 
-          {/* Financial Summary Card */}
+          {/* Table Financial Summary Card */}
           <Card>
-            <CardContent className="p-5 space-y-3">
-              <div className="flex justify-between text-sm text-muted-foreground">
-                <span>Subtotal</span>
-                <span className="font-mono">{money(projection.subtotalCents)}</span>
+            <CardContent className="p-5 space-y-2.5">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Individual Items Subtotal</span>
+                <span className="font-mono">{money(projection.tableSummary.individualSubtotalCents)}</span>
               </div>
-              <div className="flex justify-between text-sm text-muted-foreground">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Shared Items Subtotal</span>
+                <span className="font-mono">{money(projection.tableSummary.sharedSubtotalCents)}</span>
+              </div>
+              <div className="flex justify-between text-sm font-semibold text-foreground border-t pt-2">
+                <span>Table Subtotal</span>
+                <span className="font-mono">{money(projection.tableSummary.subtotalCents)}</span>
+              </div>
+              <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Tax (8.25%)</span>
-                <span className="font-mono">{money(projection.taxCents)}</span>
+                <span className="font-mono">{money(projection.tableSummary.taxCents)}</span>
               </div>
-              <div className="flex justify-between text-lg font-black text-foreground border-t pt-3">
-                <span>Total Amount</span>
-                <span className="font-mono">{money(projection.totalCents)}</span>
+              <div className="flex justify-between text-lg font-black text-foreground border-t pt-2">
+                <span>Table Total</span>
+                <span className="font-mono">{money(projection.tableSummary.totalCents)}</span>
               </div>
-              <div className="flex justify-between text-sm text-emerald-400">
+              <div className="flex justify-between text-xs text-emerald-400 font-bold">
                 <span>Total Paid</span>
-                <span className="font-mono">{money(projection.paidCents)}</span>
+                <span className="font-mono">{money(projection.tableSummary.paidCents)}</span>
               </div>
               <div className="flex justify-between text-base font-black text-primary border-t pt-2">
-                <span>Remaining Balance</span>
-                <span className="font-mono">{money(projection.unpaidBalanceCents)}</span>
+                <span>Remaining Table Balance</span>
+                <span className="font-mono">{money(projection.tableSummary.unpaidBalanceCents)}</span>
               </div>
             </CardContent>
           </Card>
 
-          {/* Active Checks List */}
-          {session.checks.map((chk) => (
-            <Card key={chk.id} className="overflow-hidden border-2">
-              <CardHeader className="flex flex-row items-center justify-between bg-secondary/30 py-3">
-                <div>
-                  <h3 className="font-bold text-foreground text-sm">{chk.title}</h3>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    Balance: {money(chk.balanceCents)}
-                  </span>
+          {/* Shared Items Proportional Breakdown */}
+          {projection.sharedItems.length > 0 && (
+            <Card>
+              <CardHeader className="py-3 border-b bg-secondary/30">
+                <div className="flex items-center gap-2">
+                  <PieChart className="size-4 text-primary" />
+                  <h3 className="font-bold text-foreground text-sm">
+                    Shared Item Allocations
+                  </h3>
                 </div>
-                <Badge>{chk.status}</Badge>
               </CardHeader>
-
-              <CardContent className="p-5 space-y-4">
-                {chk.balanceCents > 0 ? (
-                  <div className="space-y-3">
-                    {/* Tip Presets */}
-                    <div>
-                      <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
-                        Tip Preset
+              <CardContent className="divide-y p-0">
+                {projection.sharedItems.map((si) => (
+                  <div key={si.orderItemId} className="p-3.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <strong className="text-sm text-foreground">{si.name}</strong>
+                      <span className="font-mono text-xs font-bold text-foreground">
+                        {money(si.itemTotalCents)}
                       </span>
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {[15, 18, 20, 25].map((pct) => (
-                          <Button
-                            key={pct}
-                            size="default"
-                            variant={selectedTipPercent === pct ? "default" : "secondary"}
-                            className="h-8 text-xs font-mono"
-                            onClick={() => setSelectedTipPercent(pct)}
-                          >
-                            {pct}%
-                          </Button>
-                        ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {si.allocations.map((a) => (
+                        <div
+                          key={a.dinerId}
+                          className="rounded-lg border bg-background/50 p-2 text-xs"
+                        >
+                          <span className="block font-semibold text-foreground truncate">
+                            {a.displayName}
+                          </span>
+                          <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground font-mono">
+                            <span>{a.sharePercentageText}</span>
+                            <span className="font-bold text-foreground">{money(a.cents)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Individual Diner Checks */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+              Individual Diner Balances ({projection.dinerBills.length} Guests)
+            </h3>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {projection.dinerBills.map((bill) => (
+                <Card
+                  key={bill.dinerId}
+                  className={`overflow-hidden border-2 transition ${
+                    bill.isFullyPaid
+                      ? "border-emerald-500/40 bg-emerald-950/10"
+                      : "border-border bg-card"
+                  }`}
+                >
+                  <CardHeader className="flex flex-row items-center justify-between bg-secondary/30 py-3">
+                    <div>
+                      <h4 className="font-black text-foreground text-sm flex items-center gap-1.5">
+                        <UserCheck className="size-3.5 text-primary" />
+                        {bill.displayName}
+                      </h4>
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        Seat {bill.seatNumber || "-"}
+                      </span>
+                    </div>
+
+                    {bill.isFullyPaid ? (
+                      <Badge className="border-emerald-500 text-emerald-300">Paid in Full</Badge>
+                    ) : (
+                      <span className="font-mono text-sm font-black text-primary">
+                        {money(bill.unpaidBalanceCents)}
+                      </span>
+                    )}
+                  </CardHeader>
+
+                  <CardContent className="p-4 space-y-3 text-xs">
+                    <div className="space-y-1 text-muted-foreground">
+                      <div className="flex justify-between">
+                        <span>Individual Items</span>
+                        <span className="font-mono">{money(bill.individualSubtotalCents)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Shared Items Share</span>
+                        <span className="font-mono">{money(bill.sharedSubtotalCents)}</span>
+                      </div>
+                      <div className="flex justify-between font-medium text-foreground">
+                        <span>Subtotal</span>
+                        <span className="font-mono">{money(bill.subtotalCents)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Allocated Tax</span>
+                        <span className="font-mono">{money(bill.taxCents)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-foreground border-t pt-1">
+                        <span>Total Due</span>
+                        <span className="font-mono">{money(bill.totalCents)}</span>
+                      </div>
+                      <div className="flex justify-between text-emerald-400">
+                        <span>Paid</span>
+                        <span className="font-mono">{money(bill.paidCents)}</span>
                       </div>
                     </div>
 
-                    <Button
-                      size="lg"
-                      className="w-full text-sm"
-                      onClick={() => {
-                        const tipCents = Math.round(
-                          (chk.balanceCents * selectedTipPercent) / 100
-                        );
-                        onProcessPayment(chk.id, chk.balanceCents, tipCents);
-                      }}
-                    >
-                      <CreditCard className="size-4" />
-                      Pay {money(chk.balanceCents)} + {money(Math.round((chk.balanceCents * selectedTipPercent) / 100))} Tip
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 p-3 text-sm font-bold text-emerald-400">
-                    <CheckCircle2 className="size-5" />
-                    Check Paid in Full
-                  </div>
-                )}
+                    {/* 1-Tap Diner Payment */}
+                    {bill.unpaidBalanceCents > 0 && (
+                      <div className="pt-2 border-t space-y-2">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-muted-foreground">Tip Preset</span>
+                          <div className="flex gap-1">
+                            {[15, 18, 20, 25].map((pct) => (
+                              <button
+                                key={pct}
+                                onClick={() => setSelectedTipPercent(pct)}
+                                className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold ${
+                                  selectedTipPercent === pct
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-secondary text-muted-foreground"
+                                }`}
+                              >
+                                {pct}%
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <Button
+                          size="default"
+                          className="w-full text-xs"
+                          onClick={() => {
+                            const tipCents = Math.round(
+                              (bill.unpaidBalanceCents * selectedTipPercent) / 100
+                            );
+                            onProcessDinerPayment(
+                              bill.dinerId,
+                              bill.unpaidBalanceCents,
+                              tipCents
+                            );
+                          }}
+                        >
+                          <CreditCard className="size-3.5" />
+                          Pay {money(bill.unpaidBalanceCents)} + {money(Math.round((bill.unpaidBalanceCents * selectedTipPercent) / 100))} Tip
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Pay Full Table Balance Shortcut */}
+          {projection.tableSummary.unpaidBalanceCents > 0 && (
+            <Card className="border-primary/40 bg-primary/5">
+              <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div>
+                  <strong className="block text-sm text-foreground">One-Tap Table Payment</strong>
+                  <span className="text-xs text-muted-foreground">
+                    Settle entire remaining table balance of {money(projection.tableSummary.unpaidBalanceCents)} at once.
+                  </span>
+                </div>
+                <Button
+                  size="default"
+                  onClick={() => {
+                    const check = session.checks[0];
+                    const checkId = check ? check.id : "table_check";
+                    if (session.checks.length === 0) {
+                      onCreateCheck("Table Check");
+                    }
+                    onProcessPayment(
+                      checkId,
+                      projection.tableSummary.unpaidBalanceCents,
+                      Math.round((projection.tableSummary.unpaidBalanceCents * selectedTipPercent) / 100)
+                    );
+                  }}
+                >
+                  <CreditCard className="size-4" />
+                  Pay Full Table Balance ({money(projection.tableSummary.unpaidBalanceCents)})
+                </Button>
               </CardContent>
             </Card>
-          ))}
+          )}
 
           {/* Close table if fully settled */}
           {projection.unpaidBalanceCents === 0 && projection.totalCents > 0 && !session.closedAt && (
@@ -1029,13 +1224,29 @@ export function TableSessionView({
         onClose={() => setIsAddOpen(false)}
         diners={session.diners}
         onAddPizza={onAddPizza}
-        onAddDrink={(name, priceCents, dinerId) =>
-          onAddStandardItem(name, priceCents, "drinks", "bar", dinerId)
+        onAddDrink={(name, priceCents, ownership) =>
+          onAddStandardItem(name, priceCents, "drinks", "bar", ownership)
         }
-        onAddStarter={(name, priceCents, dinerId) =>
-          onAddStandardItem(name, priceCents, "starters", "cold-prep", dinerId)
+        onAddStarter={(name, priceCents, ownership) =>
+          onAddStandardItem(name, priceCents, "starters", "cold-prep", ownership)
         }
       />
+
+      {splittingItem && (
+        <SplitItemDialog
+          isOpen={true}
+          onClose={() => setSplittingItem(null)}
+          itemName={splittingItem.name}
+          itemTotalCents={splittingItem.totalCents}
+          diners={session.diners}
+          currentSplitMode={splittingItem.splitMode}
+          currentAssignedDinerIds={splittingItem.assignedDinerIds}
+          onConfirmSplit={(ownership) => {
+            onUpdateItemOwnership(splittingItem.id, ownership);
+            setSplittingItem(null);
+          }}
+        />
+      )}
 
       {voidingItem && (
         <VoidItemDialog

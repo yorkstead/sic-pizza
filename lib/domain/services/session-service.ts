@@ -1,7 +1,7 @@
 import type { TableSessionRepository } from "./session-repository";
 import type { TableSession, Diner, TableSessionProjection, DiningStage } from "../models/session";
 import { projectTableSession, deriveFinancials, deriveDiningStage } from "../models/session";
-import type { OrderItem, SelectedModifier } from "../models/order";
+import type { OrderItem, SelectedModifier, SplitMode } from "../models/order";
 import type { KitchenTicket } from "../models/kitchen";
 import type { GuestRequest, RequestType } from "../models/request";
 import type { Check, Payment } from "../models/payment";
@@ -104,11 +104,12 @@ export class TableSessionService {
       "session",
       session.id,
       {
-        tableId: params.tableId,
-        tableLabel: params.tableLabel,
-        openedByEmployeeId: params.openedByEmployeeId,
+        tableId: session.tableId,
+        tableLabel: session.tableLabel,
+        diningAreaId: session.diningAreaId,
+        openedByEmployeeId: session.openedByEmployeeId,
         assignedServerId: session.assignedServerId,
-        initialDinersCount: diners.length
+        initialDinerCount: diners.length
       },
       ctx
     );
@@ -135,12 +136,12 @@ export class TableSessionService {
     ctx: CommandContext = { actorType: "employee" }
   ): Promise<{ session: TableSession; projection: TableSessionProjection; diner: Diner }> {
     const session = await this.mustGetSession(sessionId);
-    const dinerId = `diner_${session.id}_${session.diners.length + 1}`;
+    const dinerId = `diner_${session.id}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
     const diner: Diner = {
       id: dinerId,
       sessionId: session.id,
       displayName,
-      seatNumber: seatNumber ?? session.diners.length + 1,
+      seatNumber: seatNumber ?? (session.diners.length + 1),
       isGuestUser: ctx.actorType === "guest",
       joinedAt: new Date().toISOString()
     };
@@ -170,7 +171,7 @@ export class TableSessionService {
 
     // Invariant: cannot remove a diner with active unbilled items
     const hasActiveItems = session.items.some(
-      (i) => i.dinerId === dinerId && i.status !== "voided"
+      (i) => (i.dinerId === dinerId || (i.assignedDinerIds && i.assignedDinerIds.includes(dinerId))) && i.status !== "voided"
     );
     if (hasActiveItems) {
       throw new Error(`Cannot remove diner ${dinerId} with active order items`);
@@ -226,12 +227,18 @@ export class TableSessionService {
       specialInstructions?: string;
       dinerId?: string;
       seatNumber?: number;
+      splitMode?: SplitMode;
+      assignedDinerIds?: string[];
+      customShares?: Record<string, number>;
     },
     ctx: CommandContext = { actorType: "guest" }
   ): Promise<{ session: TableSession; item: OrderItem; projection: TableSessionProjection }> {
     const session = await this.mustGetSession(sessionId);
     const itemId = `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const now = new Date().toISOString();
+
+    const assignedDinerIds = itemData.assignedDinerIds || (itemData.dinerId ? [itemData.dinerId] : []);
+    const splitMode = itemData.splitMode || (assignedDinerIds.length > 1 ? "shared_diners" : "single");
 
     const item: OrderItem = {
       id: itemId,
@@ -246,8 +253,11 @@ export class TableSessionService {
       basePriceCents: itemData.basePriceCents,
       selectedModifiers: itemData.selectedModifiers ?? [],
       specialInstructions: itemData.specialInstructions,
-      dinerId: itemData.dinerId,
+      dinerId: itemData.dinerId ?? assignedDinerIds[0],
       seatNumber: itemData.seatNumber,
+      splitMode,
+      assignedDinerIds,
+      customShares: itemData.customShares,
       proposedByDinerId: itemData.dinerId ?? ctx.actorId,
       createdAt: now
     };
@@ -262,6 +272,8 @@ export class TableSessionService {
         itemId: item.id,
         name: item.name,
         dinerId: item.dinerId,
+        splitMode: item.splitMode,
+        assignedDinerIds: item.assignedDinerIds,
         quantity: item.quantity,
         basePriceCents: item.basePriceCents,
         course: item.course
@@ -314,12 +326,18 @@ export class TableSessionService {
       specialInstructions?: string;
       dinerId?: string;
       seatNumber?: number;
+      splitMode?: SplitMode;
+      assignedDinerIds?: string[];
+      customShares?: Record<string, number>;
     },
     ctx: CommandContext = { actorType: "employee" }
   ): Promise<{ session: TableSession; item: OrderItem; projection: TableSessionProjection }> {
     const session = await this.mustGetSession(sessionId);
     const itemId = `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const now = new Date().toISOString();
+
+    const assignedDinerIds = itemData.assignedDinerIds || (itemData.dinerId ? [itemData.dinerId] : []);
+    const splitMode = itemData.splitMode || (assignedDinerIds.length > 1 ? "shared_diners" : "single");
 
     const item: OrderItem = {
       id: itemId,
@@ -334,8 +352,11 @@ export class TableSessionService {
       basePriceCents: itemData.basePriceCents,
       selectedModifiers: itemData.selectedModifiers ?? [],
       specialInstructions: itemData.specialInstructions,
-      dinerId: itemData.dinerId,
+      dinerId: itemData.dinerId ?? assignedDinerIds[0],
       seatNumber: itemData.seatNumber,
+      splitMode,
+      assignedDinerIds,
+      customShares: itemData.customShares,
       confirmedByEmployeeId: ctx.actorId,
       createdAt: now
     };
@@ -350,10 +371,118 @@ export class TableSessionService {
         itemId: item.id,
         name: item.name,
         dinerId: item.dinerId,
+        splitMode: item.splitMode,
+        assignedDinerIds: item.assignedDinerIds,
         quantity: item.quantity,
         basePriceCents: item.basePriceCents,
         course: item.course
       },
+      ctx
+    );
+
+    await this.repo.save(session);
+    return { session, item, projection: projectTableSession(session) };
+  }
+
+  async updateItemOwnership(
+    sessionId: string,
+    itemId: string,
+    ownership: {
+      splitMode: SplitMode;
+      assignedDinerIds?: string[];
+      customShares?: Record<string, number>;
+    },
+    ctx: CommandContext = { actorType: "employee" }
+  ): Promise<{ session: TableSession; item: OrderItem; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    const item = session.items.find((i) => i.id === itemId);
+    if (!item) throw new Error(`Item ${itemId} not found`);
+
+    item.splitMode = ownership.splitMode;
+    item.assignedDinerIds = ownership.assignedDinerIds || [];
+    item.customShares = ownership.customShares;
+    if (item.assignedDinerIds.length === 1) {
+      item.dinerId = item.assignedDinerIds[0];
+    }
+
+    await this.emit(
+      session,
+      "ITEM_OWNERSHIP_UPDATED",
+      "item",
+      item.id,
+      {
+        itemId: item.id,
+        splitMode: item.splitMode,
+        assignedDinerIds: item.assignedDinerIds,
+        customShares: item.customShares
+      },
+      ctx
+    );
+
+    await this.repo.save(session);
+    return { session, item, projection: projectTableSession(session) };
+  }
+
+  async claimItem(
+    sessionId: string,
+    itemId: string,
+    dinerId: string,
+    ctx: CommandContext = { actorType: "guest" }
+  ): Promise<{ session: TableSession; item: OrderItem; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    const item = session.items.find((i) => i.id === itemId);
+    if (!item) throw new Error(`Item ${itemId} not found`);
+
+    if (!item.assignedDinerIds.includes(dinerId)) {
+      item.assignedDinerIds.push(dinerId);
+    }
+    if (item.assignedDinerIds.length > 1) {
+      item.splitMode = "shared_diners";
+    } else {
+      item.splitMode = "single";
+      item.dinerId = dinerId;
+    }
+
+    await this.emit(
+      session,
+      "ITEM_CLAIMED",
+      "item",
+      item.id,
+      { itemId: item.id, dinerId, splitMode: item.splitMode },
+      ctx
+    );
+
+    await this.repo.save(session);
+    return { session, item, projection: projectTableSession(session) };
+  }
+
+  async unclaimItem(
+    sessionId: string,
+    itemId: string,
+    dinerId: string,
+    ctx: CommandContext = { actorType: "guest" }
+  ): Promise<{ session: TableSession; item: OrderItem; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    const item = session.items.find((i) => i.id === itemId);
+    if (!item) throw new Error(`Item ${itemId} not found`);
+
+    item.assignedDinerIds = item.assignedDinerIds.filter((id) => id !== dinerId);
+    if (item.customShares) {
+      delete item.customShares[dinerId];
+    }
+    if (item.assignedDinerIds.length === 1) {
+      item.splitMode = "single";
+      item.dinerId = item.assignedDinerIds[0];
+    } else if (item.assignedDinerIds.length === 0) {
+      item.splitMode = "whole_table";
+    }
+
+    await this.emit(
+      session,
+      "ITEM_UNCLAIMED",
+      "item",
+      item.id,
+      { itemId: item.id, dinerId, remainingDinerIds: item.assignedDinerIds },
       ctx
     );
 
@@ -369,13 +498,13 @@ export class TableSessionService {
       specialInstructions?: string;
       quantity?: number;
     },
-    ctx: CommandContext
+    ctx: CommandContext = { actorType: "employee" }
   ): Promise<{ session: TableSession; item: OrderItem; projection: TableSessionProjection }> {
     const session = await this.mustGetSession(sessionId);
     const item = session.items.find((i) => i.id === itemId);
     if (!item) throw new Error(`Item ${itemId} not found`);
     if (item.status === "preparing" || item.status === "ready" || item.status === "delivered") {
-      throw new Error(`Cannot modify item ${itemId} while in ${item.status} status`);
+      throw new Error(`Cannot modify item ${itemId} while in status ${item.status}`);
     }
 
     if (updates.selectedModifiers !== undefined) item.selectedModifiers = updates.selectedModifiers;
@@ -387,7 +516,7 @@ export class TableSessionService {
       "ITEM_MODIFIED",
       "item",
       item.id,
-      { itemId: item.id, updates },
+      { itemId: item.id, ...updates },
       ctx
     );
 
@@ -398,26 +527,24 @@ export class TableSessionService {
   async voidItem(
     sessionId: string,
     itemId: string,
-    voidReason: string,
+    reason: string,
     ctx: CommandContext = { actorType: "employee" }
-  ): Promise<{ session: TableSession; projection: TableSessionProjection }> {
+  ): Promise<{ session: TableSession; item: OrderItem; projection: TableSessionProjection }> {
     const session = await this.mustGetSession(sessionId);
     const item = session.items.find((i) => i.id === itemId);
     if (!item) throw new Error(`Item ${itemId} not found`);
-    if (!voidReason || voidReason.trim().length === 0) {
+    if (!reason || reason.trim().length === 0) {
       throw new Error("Void reason is required");
     }
 
     item.status = "voided";
-    item.voidReason = voidReason;
+    item.voidReason = reason;
     item.voidedByEmployeeId = ctx.actorId;
 
-    // Also update any kitchen ticket items
     for (const ticket of session.tickets) {
-      for (const ticketItem of ticket.items) {
-        if (ticketItem.orderItemId === itemId) {
-          ticketItem.status = "voided";
-        }
+      const ticketItem = ticket.items.find((ti) => ti.orderItemId === itemId);
+      if (ticketItem) {
+        ticketItem.status = "voided";
       }
     }
 
@@ -426,81 +553,68 @@ export class TableSessionService {
       "ITEM_VOIDED",
       "item",
       item.id,
-      { itemId: item.id, voidReason, voidedBy: ctx.actorId },
+      { itemId: item.id, name: item.name, reason, voidedBy: ctx.actorId },
       ctx
     );
 
     await this.repo.save(session);
-    return { session, projection: projectTableSession(session) };
+    return { session, item, projection: projectTableSession(session) };
   }
 
   async fireCourse(
     sessionId: string,
     course: Course,
     ctx: CommandContext = { actorType: "employee" }
-  ): Promise<{ session: TableSession; createdTickets: KitchenTicket[]; projection: TableSessionProjection }> {
+  ): Promise<{ session: TableSession; tickets: KitchenTicket[]; projection: TableSessionProjection }> {
     const session = await this.mustGetSession(sessionId);
     const itemsToFire = session.items.filter(
       (i) => i.course === course && (i.status === "confirmed" || i.status === "held")
     );
 
     if (itemsToFire.length === 0) {
-      throw new Error(`No confirmed items to fire for course: ${course}`);
+      throw new Error(`No confirmed items to fire for course ${course}`);
     }
 
-    for (const item of itemsToFire) {
-      item.status = "fired";
-    }
-
-    await this.emit(
-      session,
-      "COURSE_FIRED",
-      "order",
-      session.id,
-      { course, itemIds: itemsToFire.map((i) => i.id) },
-      ctx
-    );
-
-    // Group items by stationId and generate kitchen tickets
     const itemsByStation = new Map<string, OrderItem[]>();
     for (const item of itemsToFire) {
-      const list = itemsByStation.get(item.stationId) || [];
+      item.status = "fired";
+      const station = item.stationId || "kitchen";
+      const list = itemsByStation.get(station) || [];
       list.push(item);
-      itemsByStation.set(item.stationId, list);
+      itemsByStation.set(station, list);
     }
 
-    const createdTickets: KitchenTicket[] = [];
+    const newTickets: KitchenTicket[] = [];
     const now = new Date().toISOString();
 
-    for (const [stationId, stationItems] of itemsByStation.entries()) {
-      const ticketId = `tkt_${Date.now()}_${stationId}`;
+    for (const [stationId, items] of itemsByStation.entries()) {
+      const ticketId = `tkt_${Date.now()}_${stationId}_${Math.random().toString(36).substring(2, 5)}`;
       const ticket: KitchenTicket = {
         id: ticketId,
         sessionId: session.id,
         orderId: `order_${session.id}`,
-        stationId,
         tableLabel: session.tableLabel,
+        stationId,
         course,
         status: "queued",
-        createdAt: now,
-        items: stationItems.map((si) => {
-          const diner = session.diners.find((d) => d.id === si.dinerId);
+        items: items.map((i) => {
+          const diner = session.diners.find((d) => d.id === i.dinerId);
           return {
-            orderItemId: si.id,
-            name: si.name,
-            quantity: si.quantity,
-            course: si.course,
-            modifiers: si.selectedModifiers.map((m) => m.name),
-            specialInstructions: si.specialInstructions,
-            status: "queued",
-            seatNumber: si.seatNumber ?? diner?.seatNumber,
-            dinerName: diner?.displayName
+            orderItemId: i.id,
+            name: i.name,
+            quantity: i.quantity,
+            course: i.course,
+            modifiers: i.selectedModifiers.map((m) => m.name),
+            specialInstructions: i.specialInstructions,
+            dinerName: diner?.displayName,
+            status: "queued" as const
           };
-        })
+        }),
+        createdAt: now
       };
 
       session.tickets.push(ticket);
-      createdTickets.push(ticket);
+      newTickets.push(ticket);
 
       await this.emit(
         session,
@@ -517,15 +631,24 @@ export class TableSessionService {
       );
     }
 
+    await this.emit(
+      session,
+      "COURSE_FIRED",
+      "order",
+      `course_${course}_${session.id}`,
+      { course, firedItemCount: itemsToFire.length },
+      ctx
+    );
+
     await this.repo.save(session);
-    return { session, createdTickets, projection: projectTableSession(session) };
+    return { session, tickets: newTickets, projection: projectTableSession(session) };
   }
 
   async acceptKitchenTicket(
     sessionId: string,
     ticketId: string,
     ctx: CommandContext = { actorType: "employee" }
-  ): Promise<{ session: TableSession; ticket: KitchenTicket; projection: TableSessionProjection }> {
+  ): Promise<{ session: TableSession; projection: TableSessionProjection }> {
     const session = await this.mustGetSession(sessionId);
     const ticket = session.tickets.find((t) => t.id === ticketId);
     if (!ticket) throw new Error(`Ticket ${ticketId} not found`);
@@ -543,7 +666,7 @@ export class TableSessionService {
     );
 
     await this.repo.save(session);
-    return { session, ticket, projection: projectTableSession(session) };
+    return { session, projection: projectTableSession(session) };
   }
 
   async startTicketItem(
@@ -557,7 +680,7 @@ export class TableSessionService {
     if (!ticket) throw new Error(`Ticket ${ticketId} not found`);
 
     const ticketItem = ticket.items.find((i) => i.orderItemId === orderItemId);
-    if (!ticketItem) throw new Error(`Ticket item ${orderItemId} not found`);
+    if (!ticketItem) throw new Error(`Item ${orderItemId} not found in ticket ${ticketId}`);
 
     ticketItem.status = "preparing";
     ticket.status = "in_prep";
@@ -572,7 +695,7 @@ export class TableSessionService {
       "ITEM_STARTED",
       "item",
       orderItemId,
-      { ticketId, orderItemId, startedBy: ctx.actorId },
+      { ticketId, orderItemId, stationId: ticket.stationId },
       ctx
     );
 
@@ -591,7 +714,7 @@ export class TableSessionService {
     if (!ticket) throw new Error(`Ticket ${ticketId} not found`);
 
     const ticketItem = ticket.items.find((i) => i.orderItemId === orderItemId);
-    if (!ticketItem) throw new Error(`Ticket item ${orderItemId} not found`);
+    if (!ticketItem) throw new Error(`Item ${orderItemId} not found in ticket ${ticketId}`);
 
     ticketItem.status = "ready";
 
@@ -896,6 +1019,87 @@ export class TableSessionService {
         amountCents,
         tipCents,
         remainingBalanceCents: check.balanceCents
+      },
+      ctx
+    );
+
+    await this.repo.save(session);
+    return { session, payment, projection: projectTableSession(session) };
+  }
+
+  async processDinerPayment(
+    sessionId: string,
+    dinerId: string,
+    amountCents: number,
+    tipCents = 0,
+    providerReference?: string,
+    ctx: CommandContext = { actorType: "guest" }
+  ): Promise<{ session: TableSession; payment: Payment; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    if (amountCents <= 0) throw new Error("Payment amount must be positive");
+
+    // Ensure or find a check for this diner
+    let check = session.checks.find((c) => c.dinerIds.includes(dinerId) && c.balanceCents > 0);
+    if (!check) {
+      const diner = session.diners.find((d) => d.id === dinerId);
+      const { check: newCheck } = await this.createCheck(
+        session.id,
+        `${diner?.displayName || "Diner"} Check`,
+        [dinerId],
+        8.25,
+        ctx
+      );
+      check = newCheck;
+    }
+
+    const paymentId = `pay_diner_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+    await this.emit(
+      session,
+      "PAYMENT_STARTED",
+      "payment",
+      paymentId,
+      { paymentId, checkId: check.id, dinerId, amountCents, tipCents },
+      ctx
+    );
+
+    const payment: Payment = {
+      id: paymentId,
+      checkId: check.id,
+      sessionId: session.id,
+      amountCents,
+      tipCents,
+      method: "card",
+      provider: "mock_gateway",
+      providerReference: providerReference ?? `mock_ref_diner_${Date.now()}`,
+      status: "authorized",
+      actorType: ctx.actorType,
+      actorId: dinerId,
+      createdAt: new Date().toISOString()
+    };
+
+    session.payments.push(payment);
+
+    check.paidCents += amountCents;
+    check.tipCents += tipCents;
+    check.balanceCents = Math.max(0, check.totalCents - check.paidCents);
+    if (check.balanceCents === 0) {
+      check.status = "closed";
+      check.closedAt = new Date().toISOString();
+    }
+
+    await this.emit(
+      session,
+      "DINER_PAYMENT_PROCESSED",
+      "payment",
+      payment.id,
+      {
+        paymentId: payment.id,
+        checkId: check.id,
+        dinerId,
+        amountCents,
+        tipCents,
+        remainingCheckBalance: check.balanceCents
       },
       ctx
     );

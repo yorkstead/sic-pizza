@@ -271,7 +271,7 @@ describe("Restaurant Operating System: Core Domain Lifecycle", () => {
       );
 
       // Fire drinks course
-      const { createdTickets: drinkTickets, projection: proj1 } = await service.fireCourse(
+      const { tickets: drinkTickets, projection: proj1 } = await service.fireCourse(
         session.id,
         "drinks",
         { actorType: "employee", actorId: SERVER_ID }
@@ -310,8 +310,8 @@ describe("Restaurant Operating System: Core Domain Lifecycle", () => {
         { actorType: "employee", actorId: SERVER_ID }
       );
 
-      const { createdTickets } = await service.fireCourse(session.id, "mains");
-      const ticket = createdTickets[0];
+      const { tickets } = await service.fireCourse(session.id, "mains");
+      const ticket = tickets[0];
 
       // 1. Kitchen accepts ticket
       await service.acceptKitchenTicket(session.id, ticket.id, {

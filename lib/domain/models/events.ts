@@ -12,6 +12,9 @@ export const domainEventTypeSchema = z.enum([
   "ITEM_APPROVED",
   "ITEM_ADDED",
   "ITEM_MODIFIED",
+  "ITEM_OWNERSHIP_UPDATED",
+  "ITEM_CLAIMED",
+  "ITEM_UNCLAIMED",
   "ITEM_VOIDED",
   "COURSE_FIRED",
   "TICKET_CREATED",
@@ -26,6 +29,7 @@ export const domainEventTypeSchema = z.enum([
   "CHECK_CLAIMED",
   "PAYMENT_STARTED",
   "PAYMENT_COMPLETED",
+  "DINER_PAYMENT_PROCESSED",
   "STAGE_CHANGED",
   "TABLE_CLOSED"
 ]);

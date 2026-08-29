@@ -1,18 +1,24 @@
 import React, { useState } from "react";
-import { Check, Plus, X } from "lucide-react";
+import { Check, Plus, X, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { money } from "@/lib/utils";
 import { TOPPINGS, PRICES, pricePizza, type PizzaSelection, type PizzaSize } from "@/lib/demo/sic-pizza/catalog";
 import type { Diner } from "@/lib/domain/models/session";
 import type { Course } from "@/lib/domain/models/menu";
+import type { SplitMode } from "@/lib/domain/models/order";
+
+interface OwnershipSelection {
+  splitMode: SplitMode;
+  assignedDinerIds: string[];
+}
 
 interface AddItemDialogProps {
   isOpen: boolean;
   onClose: () => void;
   diners: readonly Diner[];
-  onAddPizza: (pizza: PizzaSelection, dinerId?: string, course?: Course) => void;
-  onAddDrink: (name: string, priceCents: number, dinerId?: string) => void;
-  onAddStarter: (name: string, priceCents: number, dinerId?: string) => void;
+  onAddPizza: (pizza: PizzaSelection, ownership: OwnershipSelection, course?: Course) => void;
+  onAddDrink: (name: string, priceCents: number, ownership: OwnershipSelection) => void;
+  onAddStarter: (name: string, priceCents: number, ownership: OwnershipSelection) => void;
 }
 
 export function AddItemDialog({
@@ -24,7 +30,8 @@ export function AddItemDialog({
   onAddStarter
 }: AddItemDialogProps) {
   const [tab, setTab] = useState<"pizza" | "drinks" | "starters">("pizza");
-  const [selectedDinerId, setSelectedDinerId] = useState<string>(diners[0]?.id || "");
+  const [splitMode, setSplitMode] = useState<SplitMode>("single");
+  const [selectedDinerIds, setSelectedDinerIds] = useState<string[]>([diners[0]?.id || ""]);
   const [pizza, setPizza] = useState<PizzaSelection>({
     size: "large",
     toppings: ["pepperoni"],
@@ -34,6 +41,30 @@ export function AddItemDialog({
   if (!isOpen) return null;
 
   const currentPizzaPrice = pricePizza(pizza);
+
+  function getOwnership(): OwnershipSelection {
+    if (splitMode === "whole_table") {
+      return { splitMode: "whole_table", assignedDinerIds: diners.map((d) => d.id) };
+    }
+    if (splitMode === "shared_diners") {
+      return { splitMode: "shared_diners", assignedDinerIds: selectedDinerIds };
+    }
+    return { splitMode: "single", assignedDinerIds: [selectedDinerIds[0] || diners[0]?.id || ""] };
+  }
+
+  function toggleDiner(dinerId: string) {
+    if (splitMode === "single") {
+      setSelectedDinerIds([dinerId]);
+    } else {
+      setSelectedDinerIds((prev) =>
+        prev.includes(dinerId)
+          ? prev.length > 1
+            ? prev.filter((id) => id !== dinerId)
+            : prev
+          : [...prev, dinerId]
+      );
+    }
+  }
 
   function toggleTopping(topping: string) {
     setPizza((prev) => ({
@@ -67,7 +98,7 @@ export function AddItemDialog({
         <div className="flex items-center justify-between border-b px-5 py-4">
           <div>
             <h2 className="text-lg font-bold text-foreground">Add to Order</h2>
-            <p className="text-xs text-muted-foreground">Select item and assign to diner</p>
+            <p className="text-xs text-muted-foreground">Select item and designate ownership</p>
           </div>
           <button
             onClick={onClose}
@@ -77,31 +108,86 @@ export function AddItemDialog({
           </button>
         </div>
 
-        {/* Diner Selector */}
+        {/* Ownership Allocation Bar */}
         {diners.length > 0 && (
-          <div className="border-b bg-background/50 px-5 py-2.5">
-            <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              Assign to Diner
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {diners.map((d) => (
+          <div className="border-b bg-background/60 px-5 py-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                <Users className="size-3.5" />
+                Item Ownership / Split
+              </span>
+
+              {/* Split Mode Selector */}
+              <div className="flex gap-1 font-mono text-[10px] font-bold uppercase">
                 <button
-                  key={d.id}
-                  onClick={() => setSelectedDinerId(d.id)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                    selectedDinerId === d.id
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-secondary text-secondary-foreground hover:bg-muted"
+                  type="button"
+                  onClick={() => {
+                    setSplitMode("single");
+                    if (selectedDinerIds.length > 1) setSelectedDinerIds([selectedDinerIds[0]]);
+                  }}
+                  className={`rounded-md px-2 py-1 transition ${
+                    splitMode === "single"
+                      ? "bg-primary text-primary-foreground font-bold"
+                      : "bg-secondary text-muted-foreground"
                   }`}
                 >
-                  {d.displayName} {d.seatNumber ? `(Seat ${d.seatNumber})` : ""}
+                  Single
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => setSplitMode("shared_diners")}
+                  className={`rounded-md px-2 py-1 transition ${
+                    splitMode === "shared_diners"
+                      ? "bg-primary text-primary-foreground font-bold"
+                      : "bg-secondary text-muted-foreground"
+                  }`}
+                >
+                  Split
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSplitMode("whole_table")}
+                  className={`rounded-md px-2 py-1 transition ${
+                    splitMode === "whole_table"
+                      ? "bg-primary text-primary-foreground font-bold"
+                      : "bg-secondary text-muted-foreground"
+                  }`}
+                >
+                  Whole Table
+                </button>
+              </div>
             </div>
+
+            {/* Diners list */}
+            {splitMode !== "whole_table" ? (
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {diners.map((d) => {
+                  const isSelected = selectedDinerIds.includes(d.id);
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => toggleDiner(d.id)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                        isSelected
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-secondary-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {d.displayName} {d.seatNumber ? `(Seat ${d.seatNumber})` : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-primary font-medium">
+                Allocated equally across all {diners.length} table guests.
+              </p>
+            )}
           </div>
         )}
 
-        {/* Tabs */}
+        {/* Category Tabs */}
         <div className="grid grid-cols-3 border-b bg-secondary/30 p-1 text-center font-mono text-xs font-bold uppercase">
           {(["pizza", "drinks", "starters"] as const).map((t) => (
             <button
@@ -181,7 +267,7 @@ export function AddItemDialog({
                 size="lg"
                 className="w-full"
                 onClick={() => {
-                  onAddPizza(pizza, selectedDinerId, "mains");
+                  onAddPizza(pizza, getOwnership(), "mains");
                   onClose();
                 }}
               >
@@ -208,7 +294,7 @@ export function AddItemDialog({
                     size="default"
                     variant="secondary"
                     onClick={() => {
-                      onAddDrink(drink.name, drink.priceCents, selectedDinerId);
+                      onAddDrink(drink.name, drink.priceCents, getOwnership());
                       onClose();
                     }}
                   >
@@ -237,7 +323,7 @@ export function AddItemDialog({
                     size="default"
                     variant="secondary"
                     onClick={() => {
-                      onAddStarter(starter.name, starter.priceCents, selectedDinerId);
+                      onAddStarter(starter.name, starter.priceCents, getOwnership());
                       onClose();
                     }}
                   >

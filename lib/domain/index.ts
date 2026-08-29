@@ -6,6 +6,7 @@ export * from "./models/order";
 export * from "./models/request";
 export * from "./models/payment";
 export * from "./models/events";
+export * from "./models/allocation";
 export * from "./models/session";
 export * from "./services/session-repository";
 export * from "./services/session-service";

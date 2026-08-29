@@ -29,10 +29,11 @@ The Restaurant Operating System is an event-driven, projection-based platform bu
 │  │                         PLATFORM CORE                             │  │
 │  │  - TableSession Aggregate Root (Diners, Courses, Tasks, Items)    │  │
 │  │  - Domain Services & Invariant Enforcement Layer                  │  │
+│  │  - Diner Ownership & Pre-Split Continuous Allocation Engine       │  │
 │  │  - Multi-station Kitchen Lifecycle (Queued -> InPrep -> Ready)    │  │
 │  │  - Multi-stakeholder Projections (Guest, Server, KDS, Expo, Mgr) │  │
 │  │  - Append-Only Audit & Domain Event Stream                        │  │
-│  │  - Integer-Cent Math & Split-Allocation Payment Seams             │  │
+│  │  - Integer-Cent Math & Deterministic Remainder Handling           │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -52,7 +53,7 @@ The Restaurant Operating System is an event-driven, projection-based platform bu
 6. **`Employee` & `Role`**: Staff member bound to location with assigned role (`server`, `bartender`, `runner`, `kitchen`, `expo`, `manager`, `host`, `admin`) and hashed PIN credentials.
 7. **`Menu`, `MenuItem`, `ModifierGroup`, `ModifierOption`**: Hierarchical catalog with item station routing, course assignments, allergen tags, and integer-cent modifier pricing.
 8. **`Course`**: Pacing category (`drinks`, `starters`, `mains`, `desserts`).
-9. **`OrderItem` & `Order`**: Item instance tied to table session, seat/diner, station, course, and lifecycle state (`draft` → `proposed` → `confirmed` → `held` → `fired` → `preparing` → `ready` → `delivered` → `voided`).
+9. **`OrderItem` & `Order`**: Item instance tied to table session, seat/diner, station, course, lifecycle state, split mode (`single`, `shared_diners`, `whole_table`), and assigned diners.
 10. **`KitchenStation` & `KitchenTicket`**: Station queue (e.g. Pizza Oven, Bar, Cold Prep, Expo) managing ticket-level and item-level preparation states.
 11. **`GuestRequest`**: Operational task request (`water_refill`, `call_server`, `condiments`, `drop_check`, `spill_cleanup`, `cutlery`) with status (`pending` → `acknowledged` → `completed`).
 12. **`Check` & `Payment`**: Bill partitions (equal split or diner-itemized split) and gateway payment records tracking integer-cent balances and tips.
@@ -88,7 +89,8 @@ Instead of maintaining brittle redundant flags, the `TableSession` derives its o
 - **Active Orders & Coursing**: Unvoided items grouped by course.
 - **Kitchen Progress**: Aggregated station prep state (`not_ordered`, `queued`, `preparing`, `ready_for_runner`, `all_delivered`).
 - **Open Guest Requests**: Pending assistance and service tasks.
-- **Unpaid Balance**: Total billable amount minus authorized payments (integer cents).
+- **Pre-Split Diner Financials**: Individual subtotals, shared items portions, proportional tax allocation, discounts, paid amounts, and unpaid balances.
+- **Table Unpaid Balance**: Total billable amount minus authorized payments (integer cents).
 - **Payment State**: `unbilled`, `split_pending`, `partially_paid`, `fully_paid`.
 - **Operational Attention State**: Urgent heuristic flags answering *"Which table needs me right now?"*:
   - `urgent_guest_request`: Unacknowledged guest service requests.
@@ -100,7 +102,26 @@ Instead of maintaining brittle redundant flags, the `TableSession` derives its o
 
 ---
 
-## 3. Server-Facing Live Table Experience
+## 3. Diner-Level Item Ownership & Continuous Pre-Split Settlement
+
+> *"The check should already be split before anybody asks to split it."*
+
+### First-Class Item Ownership Modes
+1. **Single Diner (`single`)**: Item is 100% owned by one specific diner.
+2. **Multiple Diners (`shared_diners`)**: Item is shared proportionally among a designated list of diners (e.g. 50/50, or custom shares).
+3. **Whole Table (`whole_table`)**: Item is divided equally across all active diners in the session.
+
+### Deterministic Integer-Cent Allocation Math
+- Floating-point calculations are strictly forbidden.
+- For an item or tax total of $C$ cents divided among $N$ participants with weights $W_i$:
+  $$\text{cents}_i = \left\lfloor \frac{C \cdot W_i}{\sum W} \right\rfloor$$
+  $$\text{remainder} = C - \sum_{i=1}^N \text{cents}_i$$
+- Remainder pennies are distributed deterministically to participants with the largest fractional remainders.
+- **Invariant**: The sum of allocated diner cents always equals the total source cents exactly down to the penny.
+
+---
+
+## 4. Server-Facing Live Table Experience
 
 ### Floor View ("Which table needs me right now?")
 - Live grid showing all dining areas with glanceable cards.
@@ -111,15 +132,15 @@ Instead of maintaining brittle redundant flags, the `TableSession` derives its o
 - Optimized for one-handed phone use with thumb-zone primary action bar.
 - **Header**: Back to floor, table label, stage selector, elapsed time, server transfer.
 - **Urgent Attention Bar**: 1-tap acknowledge and completion for guest assistance requests.
-- **Orders & Coursing**: Grouped by course, guest proposal approval gate, 1-tap fire, add item drawer, void dialog with mandatory reason.
+- **Orders & Coursing**: Grouped by course, guest proposal approval gate, 1-tap fire, add item drawer with ownership selection, split modification dialog, void dialog with mandatory reason.
 - **Kitchen Status**: Station ticket view with interactive line simulation actions (`Accept`, `Start Prep`, `Mark Ready`, `Deliver`).
 - **Tasks & Requests**: Real-time service task queue with 1-tap fulfillment.
-- **Checks & Settlement**: Itemized / equal split check calculations with tip presets and $0.00 balance close gate.
+- **Pre-Split Checks & Settlement**: Whole-table summary, shared item breakdown, individual diner cards with 1-tap payment, tip presets, and $0.00 balance close gate.
 - **Activity & Audit Timeline**: Real-time chronological stream generated directly from domain events.
 
 ---
 
-## 4. Auditable Domain Event Model
+## 5. Auditable Domain Event Model
 
 Every operational mutation is published as a strongly-typed, immutable `DomainEvent`:
 
@@ -131,8 +152,11 @@ Every operational mutation is published as a strongly-typed, immutable `DomainEv
 | `TABLE_TRANSFERRED` | `session` | Table reassigned to another server. |
 | `ITEM_PROPOSED` | `item` | Guest proposed an item from mobile view. |
 | `ITEM_APPROVED` | `item` | Server approved guest proposal. |
-| `ITEM_ADDED` | `item` | Server added item directly to order. |
+| `ITEM_ADDED` | `item` | Server added item directly to order with designated ownership. |
 | `ITEM_MODIFIED` | `item` | Item modifiers or instructions updated prior to prep. |
+| `ITEM_OWNERSHIP_UPDATED` | `item` | Item ownership / split shares updated. |
+| `ITEM_CLAIMED` | `item` | Diner claimed or joined ownership of an item. |
+| `ITEM_UNCLAIMED` | `item` | Diner unclaimed an item share. |
 | `ITEM_VOIDED` | `item` | Item voided with mandatory reason and authorizer ID. |
 | `COURSE_FIRED` | `order` | Server fired a course to the kitchen. |
 | `TICKET_CREATED` | `ticket` | Station ticket created from fired course items. |
@@ -148,15 +172,16 @@ Every operational mutation is published as a strongly-typed, immutable `DomainEv
 | `CHECK_CLAIMED` | `check` | Diner claimed check for payment. |
 | `PAYMENT_STARTED` | `payment` | Payment authorization initiated. |
 | `PAYMENT_COMPLETED` | `payment` | Payment authorized and check balance reduced. |
+| `DINER_PAYMENT_PROCESSED` | `payment` | Diner balance payment authorized. |
 | `TABLE_CLOSED` | `session` | Table closed (requires $0.00 unpaid balance). |
 
 ---
 
-## 5. Service & Repository Boundaries
+## 6. Service & Repository Boundaries
 
 UI components and API handlers interact with the domain exclusively through the **`TableSessionService`** and **`TableSessionRepository`**:
 
-- **Command Handlers**: Methods such as `openTableSession()`, `proposeItem()`, `approveItem()`, `fireCourse()`, `markTicketItemReady()`, `processPayment()`, `closeTableSession()`.
+- **Command Handlers**: Methods such as `openTableSession()`, `proposeItem()`, `approveItem()`, `updateItemOwnership()`, `claimItem()`, `unclaimItem()`, `fireCourse()`, `markTicketItemReady()`, `processPayment()`, `processDinerPayment()`, `closeTableSession()`.
 - **Invariants**:
   - Direct database row mutation for state transitions is prohibited.
   - Zero floating-point arithmetic.

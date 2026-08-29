@@ -14,6 +14,9 @@ export const itemStatusSchema = z.enum([
 ]);
 export type ItemStatus = z.infer<typeof itemStatusSchema>;
 
+export const splitModeSchema = z.enum(["single", "shared_diners", "whole_table"]);
+export type SplitMode = z.infer<typeof splitModeSchema>;
+
 export const selectedModifierSchema = z.object({
   modifierOptionId: z.string(),
   name: z.string(),
@@ -36,6 +39,9 @@ export const orderItemSchema = z.object({
   specialInstructions: z.string().max(280).optional(),
   dinerId: z.string().optional(),
   seatNumber: z.number().int().optional(),
+  splitMode: splitModeSchema.default("single"),
+  assignedDinerIds: z.array(z.string()).default([]),
+  customShares: z.record(z.string(), z.number().nonnegative()).optional(),
   proposedByDinerId: z.string().optional(),
   confirmedByEmployeeId: z.string().optional(),
   voidReason: z.string().optional(),

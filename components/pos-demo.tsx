@@ -80,7 +80,7 @@ export function PosDemo() {
         { actorType: "employee", actorId: SERVER_ID }
       );
 
-      // Add confirmed starter
+      // Add confirmed shared starter (split 50/50 between Alex and Sam)
       await service.addItem(
         s11.id,
         {
@@ -89,12 +89,13 @@ export function PosDemo() {
           course: "starters",
           stationId: "cold-prep",
           basePriceCents: 800,
-          dinerId: s11.diners[0]?.id
+          splitMode: "shared_diners",
+          assignedDinerIds: [s11.diners[0]?.id || "", s11.diners[1]?.id || ""]
         },
         { actorType: "employee", actorId: SERVER_ID }
       );
 
-      // Add confirmed pizza
+      // Add confirmed individual pizza for Alex
       await service.addItem(
         s11.id,
         {
@@ -104,6 +105,7 @@ export function PosDemo() {
           stationId: "pizza-oven",
           basePriceCents: 1900,
           selectedModifiers: [{ modifierOptionId: "opt_pep", name: "Pepperoni", priceCents: 175 }],
+          splitMode: "single",
           dinerId: s11.diners[0]?.id
         },
         { actorType: "employee", actorId: SERVER_ID }
@@ -438,7 +440,7 @@ export function PosDemo() {
                   projection={currentProjection}
                   currentServerId={SERVER_ID}
                   onBackToFloor={() => setSelectedTableId(null)}
-                  onAddPizza={async (pizza, dinerId, course) => {
+                  onAddPizza={async (pizza, ownership, course) => {
                     const priceCents =
                       (pizza.size === "small" ? 1400 : 1900) +
                       pizza.toppings.length * 175 +
@@ -461,13 +463,15 @@ export function PosDemo() {
                             ? [{ modifierOptionId: "opt_xc", name: "Extra Cheese", priceCents: 225 }]
                             : [])
                         ],
-                        dinerId
+                        splitMode: ownership.splitMode,
+                        assignedDinerIds: ownership.assignedDinerIds,
+                        dinerId: ownership.assignedDinerIds[0]
                       },
                       { actorType: "employee", actorId: SERVER_ID }
                     );
                     triggerUpdate();
                   }}
-                  onAddStandardItem={async (name, priceCents, course, stationId, dinerId) => {
+                  onAddStandardItem={async (name, priceCents, course, stationId, ownership) => {
                     await service.addItem(
                       currentSession.id,
                       {
@@ -476,7 +480,9 @@ export function PosDemo() {
                         course,
                         stationId,
                         basePriceCents: priceCents,
-                        dinerId
+                        splitMode: ownership.splitMode,
+                        assignedDinerIds: ownership.assignedDinerIds,
+                        dinerId: ownership.assignedDinerIds[0]
                       },
                       { actorType: "employee", actorId: SERVER_ID }
                     );
@@ -494,6 +500,15 @@ export function PosDemo() {
                       actorType: "employee",
                       actorId: SERVER_ID
                     });
+                    triggerUpdate();
+                  }}
+                  onUpdateItemOwnership={async (itemId, ownership) => {
+                    await service.updateItemOwnership(
+                      currentSession.id,
+                      itemId,
+                      ownership,
+                      { actorType: "employee", actorId: SERVER_ID }
+                    );
                     triggerUpdate();
                   }}
                   onFireCourse={async (course) => {
@@ -570,6 +585,17 @@ export function PosDemo() {
                     await service.processPayment(
                       currentSession.id,
                       checkId,
+                      amountCents,
+                      tipCents,
+                      undefined,
+                      { actorType: "employee", actorId: SERVER_ID }
+                    );
+                    triggerUpdate();
+                  }}
+                  onProcessDinerPayment={async (dinerId, amountCents, tipCents) => {
+                    await service.processDinerPayment(
+                      currentSession.id,
+                      dinerId,
                       amountCents,
                       tipCents,
                       undefined,

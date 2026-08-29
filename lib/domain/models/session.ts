@@ -1,9 +1,15 @@
 import { z } from "zod";
-import { orderItemSchema, type OrderItem, calculateOrderItemTotalCents } from "./order";
+import { orderItemSchema, type OrderItem } from "./order";
 import { guestRequestSchema, type GuestRequest } from "./request";
 import { kitchenTicketSchema, type KitchenTicket } from "./kitchen";
 import { checkSchema, paymentSchema, type Check, type Payment } from "./payment";
 import { domainEventSchema } from "./events";
+import {
+  deriveTableBillSummary,
+  type TableBillSummary,
+  type DinerBillProjection,
+  type SharedItemBreakdown
+} from "./allocation";
 
 export const diningStageSchema = z.enum([
   "SEATED",
@@ -92,11 +98,17 @@ export interface TableSessionProjection {
   kitchenProgress: KitchenProgressSummary;
   openRequests: readonly GuestRequest[];
   subtotalCents: number;
+  individualSubtotalCents: number;
+  sharedSubtotalCents: number;
   taxCents: number;
+  discountCents: number;
   totalCents: number;
   paidCents: number;
   unpaidBalanceCents: number;
   paymentState: PaymentStateSummary;
+  dinerBills: DinerBillProjection[];
+  sharedItems: SharedItemBreakdown[];
+  tableSummary: TableBillSummary;
   operationalAttention: {
     urgency: AttentionUrgency;
     reasons: string[];
@@ -131,23 +143,37 @@ export function deriveFinancials(
   payments: readonly Payment[],
   taxRatePercent = 8.25
 ) {
-  const billableItems = items.filter(
-    (i) => i.status !== "voided" && i.status !== "proposed"
-  );
-  const subtotalCents = billableItems.reduce(
-    (acc, i) => acc + calculateOrderItemTotalCents(i),
-    0
-  );
-  const taxCents = Math.round((subtotalCents * taxRatePercent) / 100);
-  const totalCents = subtotalCents + taxCents;
+  // Delegate to deterministic allocation summary engine for consistency
+  const dummySession: TableSession = {
+    id: "dummy",
+    restaurantId: "dummy",
+    locationId: "dummy",
+    tableId: "dummy",
+    tableLabel: "dummy",
+    diningAreaId: "dummy",
+    openedByEmployeeId: "dummy",
+    joinTokenHash: "dummy",
+    openedAt: new Date().toISOString(),
+    diners: [],
+    items: [...items],
+    tickets: [],
+    requests: [],
+    checks: [],
+    payments: [...payments],
+    events: []
+  };
 
-  const validPayments = payments.filter(
-    (p) => p.status === "authorized" || p.status === "captured"
-  );
-  const paidCents = validPayments.reduce((acc, p) => acc + p.amountCents, 0);
-  const unpaidBalanceCents = Math.max(0, totalCents - paidCents);
-
-  return { subtotalCents, taxCents, totalCents, paidCents, unpaidBalanceCents };
+  const summary = deriveTableBillSummary(dummySession, taxRatePercent);
+  return {
+    subtotalCents: summary.subtotalCents,
+    individualSubtotalCents: summary.individualSubtotalCents,
+    sharedSubtotalCents: summary.sharedSubtotalCents,
+    taxCents: summary.taxCents,
+    discountCents: summary.discountCents,
+    totalCents: summary.totalCents,
+    paidCents: summary.paidCents,
+    unpaidBalanceCents: summary.unpaidBalanceCents
+  };
 }
 
 export function derivePaymentState(
@@ -275,15 +301,16 @@ export function deriveOperationalAttention(
 
 export function projectTableSession(
   session: TableSession,
-  now = new Date()
+  now = new Date(),
+  taxRatePercent = 8.25
 ): TableSessionProjection {
   const stage = deriveDiningStage(session);
   const elapsedMinutes = deriveElapsedMinutes(session.openedAt, session.closedAt, now);
   const activeItems = session.items.filter((i) => i.status !== "voided");
   const kitchenProgress = deriveKitchenProgress(session.tickets, session.items);
   const openRequests = session.requests.filter((r) => r.status === "pending" || r.status === "acknowledged");
-  const financials = deriveFinancials(session.items, session.payments);
-  const paymentState = derivePaymentState(financials.totalCents, financials.paidCents, session.checks);
+  const tableSummary = deriveTableBillSummary(session, taxRatePercent);
+  const paymentState = derivePaymentState(tableSummary.totalCents, tableSummary.paidCents, session.checks);
   const operationalAttention = deriveOperationalAttention(session, now);
 
   return {
@@ -298,8 +325,18 @@ export function projectTableSession(
     activeItems,
     kitchenProgress,
     openRequests,
-    ...financials,
+    subtotalCents: tableSummary.subtotalCents,
+    individualSubtotalCents: tableSummary.individualSubtotalCents,
+    sharedSubtotalCents: tableSummary.sharedSubtotalCents,
+    taxCents: tableSummary.taxCents,
+    discountCents: tableSummary.discountCents,
+    totalCents: tableSummary.totalCents,
+    paidCents: tableSummary.paidCents,
+    unpaidBalanceCents: tableSummary.unpaidBalanceCents,
     paymentState,
+    dinerBills: tableSummary.dinerBills,
+    sharedItems: tableSummary.sharedItems,
+    tableSummary,
     operationalAttention
   };
 }
