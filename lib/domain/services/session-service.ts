@@ -25,7 +25,7 @@ export class TableSessionService {
     aggregateType: DomainEvent["aggregateType"],
     aggregateId: string,
     payload: Record<string, unknown>,
-    ctx: CommandContext
+    ctx: CommandContext = { actorType: "system" }
   ): Promise<DomainEvent> {
     const event = createDomainEvent({
       restaurantId: session.restaurantId,
@@ -34,7 +34,7 @@ export class TableSessionService {
       aggregateType,
       aggregateId,
       type,
-      actorType: ctx.actorType,
+      actorType: ctx.actorType || "system",
       actorId: ctx.actorId,
       payload,
       idempotencyKey: ctx.idempotencyKey
@@ -58,7 +58,7 @@ export class TableSessionService {
       assignedServerId?: string;
       initialDiners?: string[];
     },
-    ctx: CommandContext
+    ctx: CommandContext = { actorType: "employee", actorId: params.openedByEmployeeId }
   ): Promise<{ session: TableSession; projection: TableSessionProjection }> {
     const existing = await this.repo.findByTableId(params.tableId);
     if (existing && !existing.closedAt) {
@@ -600,13 +600,37 @@ export class TableSessionService {
         status: "queued",
         items: items.map((i) => {
           const diner = session.diners.find((d) => d.id === i.dinerId);
+          const formattedMods = i.selectedModifiers.map((m) => {
+            const parts: string[] = [];
+            if (m.placement === "LEFT") parts.push("[Left 1/2]");
+            else if (m.placement === "RIGHT") parts.push("[Right 1/2]");
+            if (m.level === "NONE") parts.push("NO");
+            else if (m.level === "LIGHT") parts.push("LIGHT");
+            else if (m.level === "EXTRA") parts.push("EXTRA");
+            else if (m.level === "ON_SIDE") parts.push("SIDE");
+            parts.push(m.name);
+            return parts.join(" ");
+          });
+
+          const allergenList: string[] = [];
+          if (i.name.toLowerCase().includes("pesto") || i.name.toLowerCase().includes("nut")) {
+            allergenList.push("tree_nuts");
+          }
+          if (i.name.toLowerCase().includes("cheese") || i.name.toLowerCase().includes("cream") || i.name.toLowerCase().includes("butter")) {
+            allergenList.push("dairy");
+          }
+
           return {
             orderItemId: i.id,
             name: i.name,
             quantity: i.quantity,
             course: i.course,
-            modifiers: i.selectedModifiers.map((m) => m.name),
+            stationId,
+            modifiers: formattedMods,
             specialInstructions: i.specialInstructions,
+            allergens: allergenList,
+            hasAllergens: allergenList.length > 0,
+            seatNumber: i.seatNumber || diner?.seatNumber,
             dinerName: diner?.displayName,
             status: "queued" as const
           };
@@ -683,8 +707,11 @@ export class TableSessionService {
     const ticketItem = ticket.items.find((i) => i.orderItemId === orderItemId);
     if (!ticketItem) throw new Error(`Item ${orderItemId} not found in ticket ${ticketId}`);
 
+    const now = new Date().toISOString();
     ticketItem.status = "preparing";
+    ticketItem.startedAt = now;
     ticket.status = "in_prep";
+    if (!ticket.startedAt) ticket.startedAt = now;
 
     const orderItem = session.items.find((i) => i.id === orderItemId);
     if (orderItem && orderItem.status !== "voided") {
@@ -717,7 +744,9 @@ export class TableSessionService {
     const ticketItem = ticket.items.find((i) => i.orderItemId === orderItemId);
     if (!ticketItem) throw new Error(`Item ${orderItemId} not found in ticket ${ticketId}`);
 
+    const now = new Date().toISOString();
     ticketItem.status = "ready";
+    ticketItem.readyAt = now;
 
     const orderItem = session.items.find((i) => i.id === orderItemId);
     if (orderItem && orderItem.status !== "voided") {
@@ -727,7 +756,7 @@ export class TableSessionService {
     const allReady = ticket.items.every((i) => i.status === "ready" || i.status === "voided");
     if (allReady) {
       ticket.status = "ready";
-      ticket.readyAt = new Date().toISOString();
+      ticket.readyAt = now;
     }
 
     await this.emit(
@@ -753,9 +782,13 @@ export class TableSessionService {
     const ticket = session.tickets.find((t) => t.id === ticketId);
     if (!ticket) throw new Error(`Ticket ${ticketId} not found`);
 
+    const now = new Date().toISOString();
     for (const itemId of orderItemIds) {
       const ticketItem = ticket.items.find((i) => i.orderItemId === itemId);
-      if (ticketItem) ticketItem.status = "delivered";
+      if (ticketItem) {
+        ticketItem.status = "delivered";
+        ticketItem.deliveredAt = now;
+      }
 
       const orderItem = session.items.find((i) => i.id === itemId);
       if (orderItem && orderItem.status !== "voided") orderItem.status = "delivered";
@@ -775,10 +808,115 @@ export class TableSessionService {
     );
     if (allDelivered) {
       ticket.status = "delivered";
-      ticket.deliveredAt = new Date().toISOString();
+      ticket.deliveredAt = now;
     }
 
     await this.repo.save(session);
+    return { session, projection: projectTableSession(session) };
+  }
+
+  /**
+   * Recalls a recently completed or ready ticket back into in_prep state for line rework/correction.
+   */
+  async recallKitchenTicket(
+    sessionId: string,
+    ticketId: string,
+    reason: string = "Line recall / quality correction",
+    ctx: CommandContext = { actorType: "employee" }
+  ): Promise<{ session: TableSession; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    const ticket = session.tickets.find((t) => t.id === ticketId);
+    if (!ticket) throw new Error(`Ticket ${ticketId} not found`);
+
+    const now = new Date().toISOString();
+    ticket.status = "in_prep";
+    ticket.recalledAt = now;
+    ticket.recallReason = reason;
+
+    for (const item of ticket.items) {
+      if (item.status !== "voided") {
+        item.status = "preparing";
+        item.recalledAt = now;
+        const orderItem = session.items.find((i) => i.id === item.orderItemId);
+        if (orderItem && orderItem.status !== "voided") {
+          orderItem.status = "preparing";
+        }
+      }
+    }
+
+    await this.emit(
+      session,
+      "TICKET_RECALLED",
+      "ticket",
+      ticket.id,
+      { ticketId: ticket.id, reason, recalledBy: ctx.actorId },
+      ctx
+    );
+
+    await this.repo.save(session);
+    return { session, projection: projectTableSession(session) };
+  }
+
+  /**
+   * Recalls an individual item on a ticket back into preparing state.
+   */
+  async recallTicketItem(
+    sessionId: string,
+    ticketId: string,
+    orderItemId: string,
+    reason: string = "Item rework",
+    ctx: CommandContext = { actorType: "employee" }
+  ): Promise<{ session: TableSession; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    const ticket = session.tickets.find((t) => t.id === ticketId);
+    if (!ticket) throw new Error(`Ticket ${ticketId} not found`);
+
+    const ticketItem = ticket.items.find((i) => i.orderItemId === orderItemId);
+    if (!ticketItem) throw new Error(`Item ${orderItemId} not found in ticket ${ticketId}`);
+
+    const now = new Date().toISOString();
+    ticketItem.status = "preparing";
+    ticketItem.recalledAt = now;
+    ticket.status = "in_prep";
+
+    const orderItem = session.items.find((i) => i.id === orderItemId);
+    if (orderItem && orderItem.status !== "voided") {
+      orderItem.status = "preparing";
+    }
+
+    await this.emit(
+      session,
+      "TICKET_ITEM_RECALLED",
+      "item",
+      orderItemId,
+      { ticketId, orderItemId, reason, recalledBy: ctx.actorId },
+      ctx
+    );
+
+    await this.repo.save(session);
+    return { session, projection: projectTableSession(session) };
+  }
+
+  /**
+   * Expo Master action: marks all ready station tickets for a table's course as delivered to the floor.
+   */
+  async deliverExpoCourse(
+    sessionId: string,
+    course: Course,
+    ctx: CommandContext = { actorType: "employee" }
+  ): Promise<{ session: TableSession; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    const courseTickets = session.tickets.filter((t) => t.course === course && t.status !== "cancelled");
+
+    for (const ticket of courseTickets) {
+      await this.deliverTicketItems(
+        sessionId,
+        ticket.id,
+        ticket.items.map((i) => i.orderItemId),
+        ctx
+      );
+    }
+
     return { session, projection: projectTableSession(session) };
   }
 

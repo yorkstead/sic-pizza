@@ -30,6 +30,7 @@ import { FloorView } from "./server/floor-view";
 import { TableSessionView } from "./server/table-session-view";
 import { AttentionQueue } from "./server/attention-queue";
 import { DoThisNext } from "./server/do-this-next";
+import { MultiStationKDS } from "./kitchen/multi-station-kds";
 
 const RESTAURANT_ID = "sic_pizza_org";
 const LOCATION_ID = "loc_downtown";
@@ -913,134 +914,51 @@ export function PosDemo() {
           )}
 
           {view === "kds" && (
-            <div className="space-y-6">
-              <div>
-                <span className="font-mono text-xs font-bold uppercase tracking-widest text-primary">
-                  Kitchen Operations
-                </span>
-                <h1 className="mt-0.5 text-2xl font-black tracking-tight sm:text-3xl">
-                  Multi-Station Kitchen Display (KDS)
-                </h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Station-routed tickets with bump timers and line coordination.
-                </p>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {sessions
-                  .flatMap((s) => s.tickets.map((t) => ({ ...t, session: s })))
-                  .map((ticket) => (
-                    <Card key={ticket.id} className="border-t-4 border-t-primary">
-                      <CardHeader className="pb-2">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <Badge className="font-mono text-xs">
-                              {ticket.session.tableLabel}
-                            </Badge>
-                            <h2 className="mt-1 font-black text-lg text-foreground">
-                              Station: {ticket.stationId}
-                            </h2>
-                          </div>
-                          <Badge>{ticket.status}</Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div className="divide-y text-xs">
-                          {ticket.items.map((i) => (
-                            <div
-                              key={i.orderItemId}
-                              className="py-2 flex justify-between items-center"
-                            >
-                              <div>
-                                <strong className="text-foreground">
-                                  {i.quantity} × {i.name}
-                                </strong>
-                                {i.modifiers.length > 0 && (
-                                  <p className="text-[11px] text-muted-foreground">
-                                    {i.modifiers.join(", ")}
-                                  </p>
-                                )}
-                              </div>
-                              <Badge className="text-[10px] px-1.5 py-0.5">{i.status}</Badge>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="pt-2">
-                          {ticket.status === "queued" && (
-                            <Button
-                              size="default"
-                              className="w-full"
-                              onClick={async () => {
-                                await service.acceptKitchenTicket(
-                                  ticket.sessionId,
-                                  ticket.id
-                                );
-                                triggerUpdate();
-                              }}
-                            >
-                              Accept Ticket
-                            </Button>
-                          )}
-                          {ticket.status === "accepted" && (
-                            <Button
-                              size="default"
-                              className="w-full"
-                              onClick={async () => {
-                                for (const item of ticket.items) {
-                                  await service.startTicketItem(
-                                    ticket.sessionId,
-                                    ticket.id,
-                                    item.orderItemId
-                                  );
-                                }
-                                triggerUpdate();
-                              }}
-                            >
-                              Start Preparation
-                            </Button>
-                          )}
-                          {ticket.status === "in_prep" && (
-                            <Button
-                              size="default"
-                              className="w-full"
-                              onClick={async () => {
-                                for (const item of ticket.items) {
-                                  await service.markTicketItemReady(
-                                    ticket.sessionId,
-                                    ticket.id,
-                                    item.orderItemId
-                                  );
-                                }
-                                triggerUpdate();
-                              }}
-                            >
-                              Mark Ready (Expo)
-                            </Button>
-                          )}
-                          {ticket.status === "ready" && (
-                            <Button
-                              size="default"
-                              variant="default"
-                              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white"
-                              onClick={async () => {
-                                await service.deliverTicketItems(
-                                  ticket.sessionId,
-                                  ticket.id,
-                                  ticket.items.map((i) => i.orderItemId)
-                                );
-                                triggerUpdate();
-                              }}
-                            >
-                              Deliver to Table
-                            </Button>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-              </div>
-            </div>
+            <MultiStationKDS
+              sessions={sessions}
+              onAcceptTicket={async (sessionId, ticketId) => {
+                await service.acceptKitchenTicket(sessionId, ticketId, {
+                  actorType: "employee",
+                  actorId: SERVER_ID
+                });
+                triggerUpdate();
+              }}
+              onStartItem={async (sessionId, ticketId, orderItemId) => {
+                await service.startTicketItem(sessionId, ticketId, orderItemId, {
+                  actorType: "employee",
+                  actorId: SERVER_ID
+                });
+                triggerUpdate();
+              }}
+              onMarkItemReady={async (sessionId, ticketId, orderItemId) => {
+                await service.markTicketItemReady(sessionId, ticketId, orderItemId, {
+                  actorType: "employee",
+                  actorId: SERVER_ID
+                });
+                triggerUpdate();
+              }}
+              onDeliverTicket={async (sessionId, ticketId, itemIds) => {
+                await service.deliverTicketItems(sessionId, ticketId, itemIds, {
+                  actorType: "employee",
+                  actorId: SERVER_ID
+                });
+                triggerUpdate();
+              }}
+              onRecallTicket={async (sessionId, ticketId, reason) => {
+                await service.recallKitchenTicket(sessionId, ticketId, reason, {
+                  actorType: "employee",
+                  actorId: SERVER_ID
+                });
+                triggerUpdate();
+              }}
+              onDeliverExpoCourse={async (sessionId, course) => {
+                await service.deliverExpoCourse(sessionId, course, {
+                  actorType: "employee",
+                  actorId: SERVER_ID
+                });
+                triggerUpdate();
+              }}
+            />
           )}
 
           {view === "join" && (

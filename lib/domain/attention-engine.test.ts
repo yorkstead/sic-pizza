@@ -197,8 +197,11 @@ describe("Restaurant Operating System: Rules-Based Server Attention Engine", () 
                 orderItemId: "i1",
                 name: "Margherita",
                 course: "mains",
+                stationId: "pizza",
                 quantity: 1,
                 modifiers: [],
+                allergens: [],
+                hasAllergens: false,
                 status: "preparing"
               }
             ],
@@ -231,8 +234,11 @@ describe("Restaurant Operating System: Rules-Based Server Attention Engine", () 
                 orderItemId: "i1",
                 name: "Margherita",
                 course: "mains",
+                stationId: "pizza",
                 quantity: 1,
                 modifiers: [],
+                allergens: [],
+                hasAllergens: false,
                 status: "ready"
               }
             ],
