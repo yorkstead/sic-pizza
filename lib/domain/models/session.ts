@@ -197,7 +197,7 @@ export function deriveDiningStage(session: TableSession): DiningStage {
   if (paidCents > 0) return "PAYING";
 
   const checkRequested = session.requests.some(
-    (r) => r.type === "drop_check" && r.status !== "completed"
+    (r) => r.category === "CHECK" && r.status !== "COMPLETED" && r.status !== "CANCELLED"
   ) || session.checks.some((c) => c.status === "presented" || c.status === "settling");
   if (checkRequested) return "CHECK_REQUESTED";
 
@@ -223,10 +223,10 @@ export function deriveOperationalAttention(
 ): { urgency: AttentionUrgency; reasons: string[]; isAttentionRequired: boolean } {
   const reasons: string[] = [];
   const openRequests = session.requests.filter(
-    (r) => r.status === "pending" || r.status === "acknowledged"
+    (r) => r.status === "OPEN" || r.status === "ACKNOWLEDGED" || r.status === "IN_PROGRESS"
   );
 
-  const pendingUrgentRequests = openRequests.filter((r) => r.status === "pending");
+  const pendingUrgentRequests = openRequests.filter((r) => r.status === "OPEN");
   if (pendingUrgentRequests.length > 0) {
     reasons.push(`${pendingUrgentRequests.length} unacknowledged guest request(s)`);
     return {
@@ -237,7 +237,7 @@ export function deriveOperationalAttention(
   }
 
   // Check requested
-  if (openRequests.some((r) => r.type === "drop_check" && r.status !== "completed")) {
+  if (openRequests.some((r) => r.category === "CHECK" && r.status !== "COMPLETED")) {
     reasons.push("Guest requested bill drop");
     return {
       urgency: "check_requested",
@@ -308,7 +308,9 @@ export function projectTableSession(
   const elapsedMinutes = deriveElapsedMinutes(session.openedAt, session.closedAt, now);
   const activeItems = session.items.filter((i) => i.status !== "voided");
   const kitchenProgress = deriveKitchenProgress(session.tickets, session.items);
-  const openRequests = session.requests.filter((r) => r.status === "pending" || r.status === "acknowledged");
+  const openRequests = session.requests.filter(
+    (r) => r.status === "OPEN" || r.status === "ACKNOWLEDGED" || r.status === "IN_PROGRESS"
+  );
   const tableSummary = deriveTableBillSummary(session, taxRatePercent);
   const paymentState = derivePaymentState(tableSummary.totalCents, tableSummary.paidCents, session.checks);
   const operationalAttention = deriveOperationalAttention(session, now);

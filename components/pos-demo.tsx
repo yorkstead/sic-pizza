@@ -8,7 +8,8 @@ import {
   LogOut,
   QrCode,
   Store,
-  Lock
+  Lock,
+  Bell
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
 } from "@/lib/domain";
 import { FloorView } from "./server/floor-view";
 import { TableSessionView } from "./server/table-session-view";
+import { AttentionQueue } from "./server/attention-queue";
 
 const RESTAURANT_ID = "sic_pizza_org";
 const LOCATION_ID = "loc_downtown";
@@ -50,7 +52,7 @@ export function PosDemo() {
   const [authenticated, setAuthenticated] = useState(false);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
-  const [view, setView] = useState<"floor" | "kds" | "join" | "history">("floor");
+  const [view, setView] = useState<"floor" | "queue" | "kds" | "join" | "history">("floor");
   const [selectedTableId, setSelectedTableId] = useState<string | null>("tbl_11");
 
   // Repository & Domain Service instances
@@ -130,13 +132,22 @@ export function PosDemo() {
         { actorType: "guest", actorId: "guest_sam" }
       );
 
-      // Guest requested water
+      // Guest requested water (routes to runner queue)
       await service.createGuestRequest(
         s11.id,
-        "water_refill",
-        "Sparkling water for seat 2",
+        "REFILL",
+        "Sparkling water refill for seat 2",
         s11.diners[1]?.id,
         { actorType: "guest", actorId: "guest_sam" }
+      );
+
+      // Guest requested hot honey condiment (routes to runner queue)
+      await service.createGuestRequest(
+        s11.id,
+        "CONDIMENT",
+        "Side of hot honey and extra ranch",
+        s11.diners[0]?.id,
+        { actorType: "guest", actorId: "guest_alex" }
       );
 
       // 2. Table 12: In DRINKS stage
@@ -168,7 +179,50 @@ export function PosDemo() {
       );
       await service.fireCourse(s12.id, "drinks");
 
-      // 3. Table 20: In CHECK_REQUESTED stage
+      // Table 12 requests drink reorder (routes to server)
+      await service.createGuestRequest(
+        s12.id,
+        "DRINK_REORDER",
+        "Another Negroni please",
+        s12.diners[0]?.id,
+        { actorType: "guest", actorId: "guest_taylor" }
+      );
+
+      // 3. Table 14: Food issue on Patio (routes to Manager & escalates)
+      const { session: s14 } = await service.openTableSession(
+        {
+          id: "sess_14",
+          restaurantId: RESTAURANT_ID,
+          locationId: LOCATION_ID,
+          tableId: "tbl_14",
+          tableLabel: "Table 14",
+          diningAreaId: "area_patio",
+          openedByEmployeeId: SERVER_ID,
+          assignedServerId: SERVER_ID,
+          initialDiners: ["Jordan Guest", "Casey"]
+        },
+        { actorType: "employee", actorId: SERVER_ID }
+      );
+      await service.addItem(
+        s14.id,
+        {
+          menuItemId: "pizza_special",
+          name: "Spicy Diavola Pizza",
+          course: "mains",
+          stationId: "pizza-oven",
+          basePriceCents: 2100
+        },
+        { actorType: "employee", actorId: SERVER_ID }
+      );
+      await service.createGuestRequest(
+        s14.id,
+        "FOOD_ISSUE",
+        "Crust undercooked in center; dough raw",
+        s14.diners[0]?.id,
+        { actorType: "guest" }
+      );
+
+      // 4. Table 20: In CHECK_REQUESTED stage
       const { session: s20 } = await service.openTableSession(
         {
           id: "sess_20",
@@ -197,13 +251,13 @@ export function PosDemo() {
       await service.createCheck(s20.id, "Check #1 · Table 20");
       await service.createGuestRequest(
         s20.id,
-        "drop_check",
-        "Ready for check",
+        "CHECK",
+        "Ready for bill drop",
         s20.diners[0]?.id,
         { actorType: "guest" }
       );
 
-      // 4. Table 21: Fully paid, ready for clear & reset
+      // 5. Table 21: Fully paid, ready for clear & reset
       const { session: s21 } = await service.openTableSession(
         {
           id: "sess_21",
@@ -267,6 +321,16 @@ export function PosDemo() {
     }
     return map;
   }, [sessions]);
+
+  const allFloorRequests = useMemo(() => {
+    return sessions.flatMap((s) => s.requests);
+  }, [sessions]);
+
+  const activeRequestCount = useMemo(() => {
+    return allFloorRequests.filter(
+      (r) => r.status !== "COMPLETED" && r.status !== "CANCELLED"
+    ).length;
+  }, [allFloorRequests]);
 
   const floorTableItems = useMemo(() => {
     return STATIC_TABLES.map((t) => {
@@ -367,6 +431,22 @@ export function PosDemo() {
           >
             <Store className="size-4" />
             Floor View
+          </Button>
+
+          <Button
+            variant={view === "queue" ? "secondary" : "ghost"}
+            className="w-full justify-between"
+            onClick={() => setView("queue")}
+          >
+            <div className="flex items-center gap-2">
+              <Bell className="size-4" />
+              <span>Attention Queue</span>
+            </div>
+            {activeRequestCount > 0 && (
+              <Badge className="px-1.5 py-0 text-[10px] font-bold bg-primary text-primary-foreground">
+                {activeRequestCount}
+              </Badge>
+            )}
           </Button>
 
           <Button
@@ -553,6 +633,20 @@ export function PosDemo() {
                     });
                     triggerUpdate();
                   }}
+                  onClaimRequest={async (requestId, empId) => {
+                    await service.claimGuestRequest(currentSession.id, requestId, empId, {
+                      actorType: "employee",
+                      actorId: SERVER_ID
+                    });
+                    triggerUpdate();
+                  }}
+                  onStartRequest={async (requestId, empId) => {
+                    await service.startGuestRequest(currentSession.id, requestId, empId, {
+                      actorType: "employee",
+                      actorId: SERVER_ID
+                    });
+                    triggerUpdate();
+                  }}
                   onCompleteRequest={async (requestId) => {
                     await service.completeGuestRequest(currentSession.id, requestId, {
                       actorType: "employee",
@@ -560,12 +654,19 @@ export function PosDemo() {
                     });
                     triggerUpdate();
                   }}
-                  onCreateGuestRequest={async (type, notes) => {
+                  onCancelRequest={async (requestId, reason) => {
+                    await service.cancelGuestRequest(currentSession.id, requestId, reason, {
+                      actorType: "employee",
+                      actorId: SERVER_ID
+                    });
+                    triggerUpdate();
+                  }}
+                  onCreateGuestRequest={async (category, notes, dinerId) => {
                     await service.createGuestRequest(
                       currentSession.id,
-                      type,
+                      category,
                       notes,
-                      currentSession.diners[0]?.id,
+                      dinerId || currentSession.diners[0]?.id,
                       { actorType: "employee", actorId: SERVER_ID }
                     );
                     triggerUpdate();
@@ -653,6 +754,60 @@ export function PosDemo() {
                 />
               )}
             </>
+          )}
+
+          {view === "queue" && (
+            <AttentionQueue
+              requests={allFloorRequests}
+              currentEmployeeId={SERVER_ID}
+              currentEmployeeRole="server"
+              onAcknowledgeRequest={async (sessionId, requestId) => {
+                await service.acknowledgeGuestRequest(sessionId, requestId, {
+                  actorType: "employee",
+                  actorId: SERVER_ID
+                });
+                triggerUpdate();
+              }}
+              onClaimRequest={async (sessionId, requestId, employeeId) => {
+                await service.claimGuestRequest(sessionId, requestId, employeeId, {
+                  actorType: "employee",
+                  actorId: SERVER_ID
+                });
+                triggerUpdate();
+              }}
+              onStartRequest={async (sessionId, requestId, employeeId) => {
+                await service.startGuestRequest(sessionId, requestId, employeeId, {
+                  actorType: "employee",
+                  actorId: SERVER_ID
+                });
+                triggerUpdate();
+              }}
+              onCompleteRequest={async (sessionId, requestId) => {
+                await service.completeGuestRequest(sessionId, requestId, {
+                  actorType: "employee",
+                  actorId: SERVER_ID
+                });
+                triggerUpdate();
+              }}
+              onCancelRequest={async (sessionId, requestId, reason) => {
+                await service.cancelGuestRequest(sessionId, requestId, reason, {
+                  actorType: "employee",
+                  actorId: SERVER_ID
+                });
+                triggerUpdate();
+              }}
+              onOpenCreateDialog={() => {
+                const targetSession = sessions.find((s) => !s.closedAt) || sessions[0];
+                if (targetSession) {
+                  setSelectedTableId(targetSession.tableId);
+                  setView("floor");
+                }
+              }}
+              onSelectTable={(tableId) => {
+                setSelectedTableId(tableId);
+                setView("floor");
+              }}
+            />
           )}
 
           {view === "kds" && (
@@ -765,7 +920,7 @@ export function PosDemo() {
                             <Button
                               size="default"
                               variant="default"
-                              className="w-full"
+                              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white"
                               onClick={async () => {
                                 await service.deliverTicketItems(
                                   ticket.sessionId,
@@ -787,32 +942,21 @@ export function PosDemo() {
           )}
 
           {view === "join" && (
-            <div className="space-y-6 max-w-xl">
+            <div className="mx-auto max-w-md space-y-6 pt-6 text-center">
               <div>
                 <span className="font-mono text-xs font-bold uppercase tracking-widest text-primary">
-                  Contactless Ordering
+                  Guest Mobile Web Experience
                 </span>
-                <h1 className="mt-0.5 text-2xl font-black tracking-tight sm:text-3xl">
-                  Guest QR Onboarding
-                </h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Zero-install guest mobile session for proposals, calls, and settlement.
+                <h1 className="mt-0.5 text-2xl font-black tracking-tight">Table QR Code Join</h1>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Scan to view live table, order items, customize pizza, and request service.
                 </p>
               </div>
 
-              <Card>
-                <CardContent className="pt-6 flex flex-col items-center text-center">
-                  <div className="grid size-48 grid-cols-5 gap-1 rounded-xl bg-white p-4 shadow-md">
-                    {Array.from({ length: 25 }, (_, i) => (
-                      <span
-                        key={i}
-                        className={`${
-                          [0, 1, 2, 4, 5, 7, 8, 10, 12, 14, 16, 18, 20, 21, 22, 23, 24].includes(i)
-                            ? "bg-black"
-                            : "bg-white"
-                        }`}
-                      />
-                    ))}
+              <Card className="p-6">
+                <CardContent className="flex flex-col items-center p-0">
+                  <div className="grid size-48 place-items-center rounded-2xl border-2 border-dashed border-primary/40 bg-secondary/30">
+                    <QrCode className="size-28 text-primary" />
                   </div>
 
                   <span className="mt-4 font-mono text-sm font-bold text-foreground">
@@ -886,7 +1030,7 @@ export function PosDemo() {
       {/* Fixed Mobile Bottom Navigation Bar */}
       <nav
         aria-label="Server primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t bg-background/95 px-1 py-2 backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-background/95 px-1 py-2 backdrop-blur lg:hidden"
       >
         <button
           onClick={() => {
@@ -899,6 +1043,19 @@ export function PosDemo() {
         >
           <Store className="size-4" />
           Floor
+        </button>
+
+        <button
+          onClick={() => setView("queue")}
+          className={`relative flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-bold ${
+            view === "queue" ? "bg-secondary text-primary" : "text-muted-foreground"
+          }`}
+        >
+          <Bell className="size-4" />
+          Queue
+          {activeRequestCount > 0 && (
+            <span className="absolute top-1.5 right-3 flex size-2 rounded-full bg-primary" />
+          )}
         </button>
 
         <button
@@ -918,7 +1075,7 @@ export function PosDemo() {
           }`}
         >
           <QrCode className="size-4" />
-          Guest QR
+          Guest
         </button>
 
         <button

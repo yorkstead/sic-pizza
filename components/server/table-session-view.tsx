@@ -29,13 +29,15 @@ import type {
 } from "@/lib/domain/models/session";
 import type { PizzaSelection } from "@/lib/demo/sic-pizza/catalog";
 import type { Course } from "@/lib/domain/models/menu";
-import type { RequestType } from "@/lib/domain/models/request";
 import type { SplitMode } from "@/lib/domain/models/order";
 import { StageBadge } from "./stage-badge";
 import { AddItemDialog } from "./add-item-dialog";
 import { VoidItemDialog } from "./void-item-dialog";
 import { TransferTableDialog } from "./transfer-table-dialog";
 import { SplitItemDialog } from "./split-item-dialog";
+import { CreateRequestDialog } from "./create-request-dialog";
+import { deriveRequestAgeMinutes, deriveRequestEscalation } from "@/lib/domain/models/request";
+import type { RequestCategory } from "@/lib/domain/models/request";
 
 interface TableSessionViewProps {
   session: TableSession;
@@ -70,8 +72,11 @@ interface TableSessionViewProps {
   onMarkItemReady: (ticketId: string, orderItemId: string) => void;
   onDeliverItems: (ticketId: string, orderItemIds: string[]) => void;
   onAcknowledgeRequest: (requestId: string) => void;
+  onClaimRequest?: (requestId: string, employeeId: string) => void;
+  onStartRequest?: (requestId: string, employeeId: string) => void;
   onCompleteRequest: (requestId: string) => void;
-  onCreateGuestRequest: (type: RequestType, notes?: string) => void;
+  onCancelRequest?: (requestId: string, reason: string) => void;
+  onCreateGuestRequest: (category: RequestCategory | string, notes?: string, dinerId?: string) => void;
   onSetStage: (stage: DiningStage) => void;
   onProcessPayment: (checkId: string, amountCents: number, tipCents: number) => void;
   onProcessDinerPayment: (dinerId: string, amountCents: number, tipCents: number) => void;
@@ -97,7 +102,10 @@ export function TableSessionView({
   onMarkItemReady,
   onDeliverItems,
   onAcknowledgeRequest,
+  onClaimRequest,
+  onStartRequest,
   onCompleteRequest,
+  onCancelRequest,
   onCreateGuestRequest,
   onSetStage,
   onProcessPayment,
@@ -111,6 +119,7 @@ export function TableSessionView({
     "orders" | "kitchen" | "requests" | "checks" | "history" | "diners"
   >("orders");
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isCreateRequestOpen, setIsCreateRequestOpen] = useState(false);
   const [voidingItem, setVoidingItem] = useState<{ id: string; name: string } | null>(null);
   const [splittingItem, setSplittingItem] = useState<{
     id: string;
@@ -136,7 +145,7 @@ export function TableSessionView({
   const activeItems = session.items.filter((i) => i.status !== "voided");
   const proposedItems = activeItems.filter((i) => i.status === "proposed");
   const openRequests = session.requests.filter(
-    (r) => r.status === "pending" || r.status === "acknowledged"
+    (r) => r.status === "OPEN" || r.status === "ACKNOWLEDGED" || r.status === "IN_PROGRESS"
   );
 
   // Derive primary next action
@@ -168,7 +177,7 @@ export function TableSessionView({
       onClick: () => onFireCourse("mains"),
       icon: Flame
     };
-  } else if (openRequests.some((r) => r.type === "drop_check")) {
+  } else if (openRequests.some((r) => r.category === "CHECK")) {
     primaryAction = {
       label: "Present Pre-Split Check",
       onClick: () => {
@@ -273,7 +282,7 @@ export function TableSessionView({
 
             {openRequests.length > 0 && (
               <div className="flex gap-1.5">
-                {openRequests[0].status === "pending" && (
+                {openRequests[0].status === "OPEN" && (
                   <Button
                     size="default"
                     variant="danger"
@@ -695,33 +704,49 @@ export function TableSessionView({
       {activeTab === "requests" && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-black text-foreground">Operational Tasks & Requests</h2>
+            <div>
+              <h2 className="text-lg font-black text-foreground">Operational Tasks & Requests</h2>
+              <p className="text-xs text-muted-foreground">
+                Live queue for Table {session.tableLabel} with automated role routing.
+              </p>
+            </div>
+            <Button
+              size="default"
+              className="text-xs"
+              onClick={() => setIsCreateRequestOpen(true)}
+            >
+              <Plus className="size-3.5 mr-1" />
+              Log Request
+            </Button>
           </div>
 
           {/* Quick Task Dispatch for Server */}
           <Card>
             <CardHeader className="pb-2">
               <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                Log New Table Request
+                Quick Task Buttons
               </span>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
                 {(
                   [
-                    ["water_refill", "Water Refill"],
-                    ["condiments", "Condiments / Sauces"],
-                    ["cutlery", "Extra Cutlery"],
-                    ["drop_check", "Check Requested"],
-                    ["spill_cleanup", "Spill Cleanup"]
+                    ["SERVER_NEEDED", "Server Needed"],
+                    ["REFILL", "Water Refill"],
+                    ["CONDIMENT", "Condiments / Sauces"],
+                    ["CHECK", "Drop Check"],
+                    ["TO_GO_BOX", "To-Go Boxes"],
+                    ["UTENSILS", "Extra Utensils"],
+                    ["FOOD_ISSUE", "Food Issue (Mgr)"],
+                    ["MISSING_ITEM", "Missing Item (Expo)"]
                   ] as const
-                ).map(([type, label]) => (
+                ).map(([cat, label]) => (
                   <Button
-                    key={type}
+                    key={cat}
                     size="default"
                     variant="secondary"
                     className="text-xs"
-                    onClick={() => onCreateGuestRequest(type)}
+                    onClick={() => onCreateGuestRequest(cat)}
                   >
                     + {label}
                   </Button>
@@ -734,80 +759,163 @@ export function TableSessionView({
             <Card>
               <CardContent className="py-10 text-center text-muted-foreground">
                 <CheckCircle2 className="mx-auto size-8 text-emerald-400 opacity-50" />
-                <p className="mt-2 text-sm font-semibold">All guest requests resolved.</p>
-                <p className="text-xs">No pending tasks for this table.</p>
+                <p className="mt-2 text-sm font-semibold">All table requests resolved.</p>
+                <p className="text-xs">No outstanding tasks for this table.</p>
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-2.5">
-              {session.requests.map((req) => (
-                <Card
-                  key={req.id}
-                  className={`p-4 ${
-                    req.status === "pending"
-                      ? "border-red-500/40 bg-red-950/10"
-                      : req.status === "acknowledged"
-                      ? "border-amber-500/40 bg-amber-950/10"
-                      : "opacity-60"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <strong className="text-sm font-bold text-foreground capitalize">
-                          {req.type.replace("_", " ")}
-                        </strong>
-                        <Badge
-                          className={
-                            req.status === "pending"
-                              ? "border-red-500 text-red-300"
-                              : req.status === "acknowledged"
-                              ? "border-amber-500 text-amber-300"
-                              : "border-emerald-500 text-emerald-300"
-                          }
-                        >
-                          {req.status}
-                        </Badge>
+              {session.requests.map((req) => {
+                const ageMinutes = deriveRequestAgeMinutes(req.createdAt);
+                const escalation = deriveRequestEscalation(req);
+                const isComplete = req.status === "COMPLETED";
+                const isCancelled = req.status === "CANCELLED";
+                const isOpen = req.status === "OPEN";
+                const isAck = req.status === "ACKNOWLEDGED";
+                const isInPrep = req.status === "IN_PROGRESS";
+
+                return (
+                  <Card
+                    key={req.id}
+                    className={`p-4 border-2 transition ${
+                      escalation === "ESCALATED"
+                        ? "border-destructive/80 bg-destructive/10"
+                        : escalation === "OVERDUE"
+                        ? "border-amber-500/70 bg-amber-950/15"
+                        : req.priority === "URGENT"
+                        ? "border-destructive/40 bg-card"
+                        : isComplete || isCancelled
+                        ? "opacity-60 border-border"
+                        : "border-border bg-card"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong className="text-sm font-bold text-foreground capitalize">
+                            {(req.category || req.type || "OTHER").replace(/_/g, " ")}
+                          </strong>
+
+                          <Badge
+                            className={
+                              req.priority === "URGENT"
+                                ? "border-destructive bg-destructive/20 text-destructive-foreground font-black"
+                                : req.priority === "HIGH"
+                                ? "border-amber-500 bg-amber-500/20 text-amber-300 font-bold"
+                                : "text-muted-foreground"
+                            }
+                          >
+                            {req.priority || "NORMAL"}
+                          </Badge>
+
+                          {escalation === "ESCALATED" && (
+                            <Badge className="border-red-500 bg-red-600 text-white font-black animate-pulse">
+                              🚨 ESCALATED (MGR)
+                            </Badge>
+                          )}
+                          {escalation === "OVERDUE" && (
+                            <Badge className="border-amber-500 bg-amber-500/30 text-amber-200 font-bold">
+                              ⚠️ OVERDUE
+                            </Badge>
+                          )}
+
+                          <Badge className="text-[10px] uppercase font-mono">
+                            {req.status}
+                          </Badge>
+                        </div>
+
+                        {req.description && (
+                          <p className="text-xs text-foreground/90 font-medium">
+                            {req.description}
+                          </p>
+                        )}
+                        {req.notes && req.notes !== req.description && (
+                          <p className="text-xs italic text-muted-foreground">
+                            &ldquo;{req.notes}&rdquo;
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] text-muted-foreground">
+                          {req.dinerName && (
+                            <span>
+                              From: <strong className="text-foreground">{req.dinerName}</strong>
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1 font-mono">
+                            <Clock className="size-3" />
+                            {isComplete ? `Resolved in ${ageMinutes}m` : `${ageMinutes}m ago`}
+                          </span>
+                          <span>
+                            Role: <strong className="text-foreground capitalize">{req.assignedRole || "server"}</strong>
+                          </span>
+                          {req.assignedEmployeeId && (
+                            <span>
+                              Assigned: <strong className="text-foreground">{req.assignedEmployeeId}</strong>
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      {req.dinerName && (
-                        <p className="text-xs text-muted-foreground">
-                          From: {req.dinerName}
-                        </p>
-                      )}
-                      {req.notes && (
-                        <p className="text-xs italic text-muted-foreground">
-                          &ldquo;{req.notes}&rdquo;
-                        </p>
+                      {!isComplete && !isCancelled && (
+                        <div className="flex flex-col sm:flex-row items-end gap-1.5 shrink-0">
+                          {isOpen && (
+                            <>
+                              <Button
+                                size="default"
+                                variant="secondary"
+                                className="h-8 text-xs"
+                                onClick={() => onAcknowledgeRequest(req.id)}
+                              >
+                                Acknowledge
+                              </Button>
+                              <Button
+                                size="default"
+                                className="h-8 text-xs"
+                                onClick={() => onClaimRequest?.(req.id, currentServerId)}
+                              >
+                                Claim
+                              </Button>
+                            </>
+                          )}
+
+                          {isAck && (
+                            <Button
+                              size="default"
+                              className="h-8 text-xs"
+                              onClick={() => onStartRequest?.(req.id, currentServerId)}
+                            >
+                              Start
+                            </Button>
+                          )}
+
+                          {(isOpen || isAck || isInPrep) && (
+                            <Button
+                              size="default"
+                              variant="default"
+                              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white"
+                              onClick={() => onCompleteRequest(req.id)}
+                            >
+                              <Check className="size-3.5 mr-1" />
+                              Complete
+                            </Button>
+                          )}
+
+                          {onCancelRequest && (
+                            <Button
+                              variant="ghost"
+                              size="default"
+                              className="h-8 text-xs text-muted-foreground hover:text-destructive"
+                              onClick={() => onCancelRequest(req.id, "Cancelled by server")}
+                            >
+                              Cancel
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </div>
-
-                    <div className="flex gap-1.5">
-                      {req.status === "pending" && (
-                        <Button
-                          size="default"
-                          variant="secondary"
-                          className="h-8 text-xs"
-                          onClick={() => onAcknowledgeRequest(req.id)}
-                        >
-                          Acknowledge
-                        </Button>
-                      )}
-
-                      {req.status !== "completed" && (
-                        <Button
-                          size="default"
-                          className="h-8 text-xs"
-                          onClick={() => onCompleteRequest(req.id)}
-                        >
-                          <Check className="size-3.5" />
-                          Complete
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1266,6 +1374,16 @@ export function TableSessionView({
         tableLabel={session.tableLabel}
         currentServerName={session.assignedServerId || "Jordan"}
         onConfirmTransfer={onTransferTable}
+      />
+
+      <CreateRequestDialog
+        open={isCreateRequestOpen}
+        onClose={() => setIsCreateRequestOpen(false)}
+        tableLabel={session.tableLabel}
+        diners={session.diners}
+        onCreateRequest={(category, desc, dinerId) => {
+          onCreateGuestRequest(category, desc, dinerId);
+        }}
       />
     </div>
   );

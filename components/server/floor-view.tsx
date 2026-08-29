@@ -300,7 +300,7 @@ export function FloorView({
                             {proj.openRequests.length > 1 ? "s" : ""}
                           </span>
                           <span className="font-mono text-[10px] uppercase">
-                            {proj.openRequests[0].type.replace("_", " ")}
+                            {(proj.openRequests[0]?.category || proj.openRequests[0]?.type || "REQUEST").replace(/_/g, " ")}
                           </span>
                         </div>
                       )}

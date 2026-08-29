@@ -367,7 +367,7 @@ describe("Restaurant Operating System: Core Domain Lifecycle", () => {
         undefined,
         { actorType: "guest" }
       );
-      expect(request.status).toBe("pending");
+      expect(request.status).toBe("OPEN");
       expect(p1.operationalAttention.urgency).toBe("urgent_guest_request");
 
       // Server acknowledges
@@ -376,7 +376,7 @@ describe("Restaurant Operating System: Core Domain Lifecycle", () => {
         request.id,
         { actorType: "employee", actorId: SERVER_ID }
       );
-      expect(acked.status).toBe("acknowledged");
+      expect(acked.status).toBe("ACKNOWLEDGED");
       expect(p2.operationalAttention.urgency).toBe("normal");
 
       // Complete request
@@ -385,7 +385,7 @@ describe("Restaurant Operating System: Core Domain Lifecycle", () => {
         request.id,
         { actorType: "employee", actorId: SERVER_ID }
       );
-      expect(done.status).toBe("completed");
+      expect(done.status).toBe("COMPLETED");
       expect(p3.openRequests.length).toBe(0);
     });
   });

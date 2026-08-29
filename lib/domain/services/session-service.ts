@@ -3,7 +3,8 @@ import type { TableSession, Diner, TableSessionProjection, DiningStage } from ".
 import { projectTableSession, deriveFinancials, deriveDiningStage } from "../models/session";
 import type { OrderItem, SelectedModifier, SplitMode } from "../models/order";
 import type { KitchenTicket } from "../models/kitchen";
-import type { GuestRequest, RequestType } from "../models/request";
+import type { GuestRequest, RequestCategory } from "../models/request";
+import { normalizeRequestCategory, routeRequest } from "../models/request";
 import type { Check, Payment } from "../models/payment";
 import type { DomainEvent, ActorType } from "../models/events";
 import { createDomainEvent } from "../models/events";
@@ -783,26 +784,35 @@ export class TableSessionService {
 
   async createGuestRequest(
     sessionId: string,
-    type: RequestType,
-    notes?: string,
+    rawCategoryOrType: RequestCategory | string,
+    descriptionOrNotes?: string,
     dinerId?: string,
     ctx: CommandContext = { actorType: "guest" }
   ): Promise<{ session: TableSession; request: GuestRequest; projection: TableSessionProjection }> {
     const session = await this.mustGetSession(sessionId);
+    const category = normalizeRequestCategory(rawCategoryOrType);
     const reqId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const diner = session.diners.find((d) => d.id === dinerId);
+    const routing = routeRequest(category, { assignedServerId: session.assignedServerId });
 
     const request: GuestRequest = {
       id: reqId,
       sessionId: session.id,
       tableId: session.tableId,
       tableLabel: session.tableLabel,
+      diningAreaId: session.diningAreaId,
       dinerId,
       dinerName: diner?.displayName,
-      type,
-      status: "pending",
-      notes,
-      requestedAt: new Date().toISOString()
+      category,
+      type: category,
+      description: descriptionOrNotes,
+      notes: descriptionOrNotes,
+      priority: routing.priority,
+      status: "OPEN",
+      assignedRole: routing.assignedRole,
+      assignedEmployeeId: routing.assignedEmployeeId,
+      escalationState: "NORMAL",
+      createdAt: new Date().toISOString()
     };
 
     session.requests.push(request);
@@ -811,7 +821,15 @@ export class TableSessionService {
       "REQUEST_CREATED",
       "request",
       request.id,
-      { requestId: request.id, type, dinerName: request.dinerName, notes },
+      {
+        requestId: request.id,
+        category: request.category,
+        priority: request.priority,
+        assignedRole: request.assignedRole,
+        assignedEmployeeId: request.assignedEmployeeId,
+        dinerName: request.dinerName,
+        description: request.description
+      },
       ctx
     );
 
@@ -827,17 +845,87 @@ export class TableSessionService {
     const session = await this.mustGetSession(sessionId);
     const request = session.requests.find((r) => r.id === requestId);
     if (!request) throw new Error(`Request ${requestId} not found`);
+    if (request.status === "COMPLETED" || request.status === "CANCELLED") {
+      throw new Error(`Cannot acknowledge request ${requestId} in status ${request.status}`);
+    }
 
-    request.status = "acknowledged";
+    request.status = "ACKNOWLEDGED";
     request.acknowledgedAt = new Date().toISOString();
     request.acknowledgedByEmployeeId = ctx.actorId;
+    if (ctx.actorId && !request.assignedEmployeeId) {
+      request.assignedEmployeeId = ctx.actorId;
+    }
 
     await this.emit(
       session,
       "REQUEST_ACKNOWLEDGED",
       "request",
       request.id,
-      { requestId: request.id, acknowledgedBy: ctx.actorId },
+      { requestId: request.id, acknowledgedBy: ctx.actorId, assignedEmployeeId: request.assignedEmployeeId },
+      ctx
+    );
+
+    await this.repo.save(session);
+    return { session, request, projection: projectTableSession(session) };
+  }
+
+  async claimGuestRequest(
+    sessionId: string,
+    requestId: string,
+    employeeId: string,
+    ctx: CommandContext = { actorType: "employee" }
+  ): Promise<{ session: TableSession; request: GuestRequest; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    const request = session.requests.find((r) => r.id === requestId);
+    if (!request) throw new Error(`Request ${requestId} not found`);
+    if (request.status === "COMPLETED" || request.status === "CANCELLED") {
+      throw new Error(`Cannot claim request ${requestId} in status ${request.status}`);
+    }
+
+    request.assignedEmployeeId = employeeId;
+    if (request.status === "OPEN") {
+      request.status = "ACKNOWLEDGED";
+      request.acknowledgedAt = new Date().toISOString();
+      request.acknowledgedByEmployeeId = ctx.actorId;
+    }
+
+    await this.emit(
+      session,
+      "REQUEST_CLAIMED",
+      "request",
+      request.id,
+      { requestId: request.id, assignedEmployeeId: employeeId, claimedBy: ctx.actorId },
+      ctx
+    );
+
+    await this.repo.save(session);
+    return { session, request, projection: projectTableSession(session) };
+  }
+
+  async startGuestRequest(
+    sessionId: string,
+    requestId: string,
+    employeeId?: string,
+    ctx: CommandContext = { actorType: "employee" }
+  ): Promise<{ session: TableSession; request: GuestRequest; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    const request = session.requests.find((r) => r.id === requestId);
+    if (!request) throw new Error(`Request ${requestId} not found`);
+    if (request.status === "COMPLETED" || request.status === "CANCELLED") {
+      throw new Error(`Cannot start request ${requestId} in status ${request.status}`);
+    }
+
+    request.status = "IN_PROGRESS";
+    request.inProgressAt = new Date().toISOString();
+    request.inProgressByEmployeeId = employeeId ?? ctx.actorId;
+    if (employeeId) request.assignedEmployeeId = employeeId;
+
+    await this.emit(
+      session,
+      "REQUEST_IN_PROGRESS",
+      "request",
+      request.id,
+      { requestId: request.id, inProgressBy: request.inProgressByEmployeeId },
       ctx
     );
 
@@ -853,8 +941,14 @@ export class TableSessionService {
     const session = await this.mustGetSession(sessionId);
     const request = session.requests.find((r) => r.id === requestId);
     if (!request) throw new Error(`Request ${requestId} not found`);
+    if (request.status === "COMPLETED") {
+      return { session, request, projection: projectTableSession(session) };
+    }
+    if (request.status === "CANCELLED") {
+      throw new Error(`Cannot complete cancelled request ${requestId}`);
+    }
 
-    request.status = "completed";
+    request.status = "COMPLETED";
     request.completedAt = new Date().toISOString();
     request.completedByEmployeeId = ctx.actorId;
 
@@ -864,6 +958,63 @@ export class TableSessionService {
       "request",
       request.id,
       { requestId: request.id, completedBy: ctx.actorId },
+      ctx
+    );
+
+    await this.repo.save(session);
+    return { session, request, projection: projectTableSession(session) };
+  }
+
+  async cancelGuestRequest(
+    sessionId: string,
+    requestId: string,
+    reason: string,
+    ctx: CommandContext = { actorType: "employee" }
+  ): Promise<{ session: TableSession; request: GuestRequest; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    const request = session.requests.find((r) => r.id === requestId);
+    if (!request) throw new Error(`Request ${requestId} not found`);
+    if (request.status === "COMPLETED") {
+      throw new Error(`Cannot cancel completed request ${requestId}`);
+    }
+
+    request.status = "CANCELLED";
+    request.cancelledAt = new Date().toISOString();
+    request.cancelledByEmployeeId = ctx.actorId;
+    request.cancellationReason = reason;
+
+    await this.emit(
+      session,
+      "REQUEST_CANCELLED",
+      "request",
+      request.id,
+      { requestId: request.id, reason, cancelledBy: ctx.actorId },
+      ctx
+    );
+
+    await this.repo.save(session);
+    return { session, request, projection: projectTableSession(session) };
+  }
+
+  async escalateGuestRequest(
+    sessionId: string,
+    requestId: string,
+    reason?: string,
+    ctx: CommandContext = { actorType: "system" }
+  ): Promise<{ session: TableSession; request: GuestRequest; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    const request = session.requests.find((r) => r.id === requestId);
+    if (!request) throw new Error(`Request ${requestId} not found`);
+
+    request.escalationState = "ESCALATED";
+    request.escalatedAt = new Date().toISOString();
+
+    await this.emit(
+      session,
+      "REQUEST_ESCALATED",
+      "request",
+      request.id,
+      { requestId: request.id, reason: reason || "Response target exceeded" },
       ctx
     );
 
@@ -1122,7 +1273,9 @@ export class TableSessionService {
       throw new Error(`Cannot close table session with unpaid balance of ${unpaidBalanceCents} cents`);
     }
 
-    const openRequests = session.requests.filter((r) => r.status === "pending" || r.status === "acknowledged");
+    const openRequests = session.requests.filter(
+      (r) => r.status === "OPEN" || r.status === "ACKNOWLEDGED" || r.status === "IN_PROGRESS"
+    );
     if (openRequests.length > 0) {
       throw new Error(`Cannot close table with ${openRequests.length} uncompleted guest requests`);
     }
