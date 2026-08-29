@@ -2,6 +2,7 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import {
   InMemoryTableSessionRepository,
   TableSessionService,
+  deriveDiningStage,
   deriveOperationalAttention,
   deriveFinancials,
   derivePaymentState
@@ -40,7 +41,7 @@ describe("Restaurant Operating System: Core Domain Lifecycle", () => {
 
       expect(session.tableLabel).toBe("Table 11");
       expect(session.diners.length).toBe(2);
-      expect(projection.stage).toBe("seated");
+      expect(projection.stage).toBe("SEATED");
       expect(projection.operationalAttention.urgency).toBe("normal");
 
       const events = await repo.getEvents(session.id);
@@ -279,7 +280,7 @@ describe("Restaurant Operating System: Core Domain Lifecycle", () => {
       expect(drinkTickets.length).toBe(1);
       expect(drinkTickets[0].stationId).toBe("bar");
       expect(drinkTickets[0].status).toBe("queued");
-      expect(proj1.stage).toBe("food_in_flight");
+      expect(proj1.stage).toBe("DRINKS");
     });
   });
 
@@ -341,7 +342,7 @@ describe("Restaurant Operating System: Core Domain Lifecycle", () => {
         { actorType: "employee", actorId: "emp_runner_dave" }
       );
       expect(deliveredProj.kitchenProgress).toBe("all_delivered");
-      expect(deliveredProj.stage).toBe("dining");
+      expect(deliveredProj.stage).toBe("ENTREES");
     });
   });
 
@@ -497,11 +498,98 @@ describe("Restaurant Operating System: Core Domain Lifecycle", () => {
       );
 
       expect(closedSession.closedAt).toBeDefined();
-      expect(finalProj.stage).toBe("closed");
+      expect(finalProj.stage).toBe("CLOSED");
       expect(finalProj.unpaidBalanceCents).toBe(0);
 
       const events = await repo.getEvents(session.id);
       expect(events.some((e) => e.type === "TABLE_CLOSED")).toBe(true);
+    });
+  });
+
+  describe("Explicit Dining Stages & State Transitions", () => {
+    test("automatically suggests stages across the full meal lifecycle", async () => {
+      const { session } = await service.openTableSession(
+        {
+          restaurantId: RESTAURANT_ID,
+          locationId: LOCATION_ID,
+          tableId: TABLE_ID,
+          tableLabel: "Table 11",
+          diningAreaId: DINING_AREA_ID,
+          openedByEmployeeId: SERVER_ID
+        },
+        { actorType: "employee", actorId: SERVER_ID }
+      );
+
+      // 1. Initially SEATED
+      const proj = (await service.addDiner(session.id, "Jordan")).projection;
+      expect(proj.stage).toBe("SEATED");
+
+      // 2. Draft/proposed item -> ORDERING
+      await service.proposeItem(session.id, {
+        menuItemId: "item_pizza",
+        name: "Pizza",
+        basePriceCents: 1800
+      });
+      const curSession = (await repo.findById(session.id))!;
+      expect(deriveDiningStage(curSession)).toBe("ORDERING");
+
+      // 3. Drinks fired -> DRINKS
+      await service.addItem(session.id, {
+        menuItemId: "bev_1",
+        name: "Cocktail",
+        course: "drinks",
+        stationId: "bar",
+        basePriceCents: 1200
+      });
+      await service.fireCourse(session.id, "drinks");
+      expect((await repo.findById(session.id))!.tickets.length).toBe(1);
+      expect(deriveDiningStage((await repo.findById(session.id))!)).toBe("DRINKS");
+
+      // 4. Appetizers fired -> APPETIZERS
+      await service.addItem(session.id, {
+        menuItemId: "app_1",
+        name: "Arancini",
+        course: "starters",
+        stationId: "cold-prep",
+        basePriceCents: 900
+      });
+      await service.fireCourse(session.id, "starters");
+      expect(deriveDiningStage((await repo.findById(session.id))!)).toBe("APPETIZERS");
+
+      // 5. Entrees fired -> ENTREES
+      await service.addItem(session.id, {
+        menuItemId: "main_1",
+        name: "Detroit Deep Dish",
+        course: "mains",
+        stationId: "pizza-oven",
+        basePriceCents: 2400
+      });
+      await service.fireCourse(session.id, "mains");
+      expect(deriveDiningStage((await repo.findById(session.id))!)).toBe("ENTREES");
+
+      // 6. Dessert fired -> DESSERT
+      await service.addItem(session.id, {
+        menuItemId: "des_1",
+        name: "Cannoli",
+        course: "desserts",
+        stationId: "cold-prep",
+        basePriceCents: 700
+      });
+      await service.fireCourse(session.id, "desserts");
+      expect(deriveDiningStage((await repo.findById(session.id))!)).toBe("DESSERT");
+
+      // 7. Check requested -> CHECK_REQUESTED
+      await service.createGuestRequest(session.id, "drop_check", "Ready for bill");
+      expect(deriveDiningStage((await repo.findById(session.id))!)).toBe("CHECK_REQUESTED");
+
+      // 8. Payment in progress -> PAYING
+      const { check } = await service.createCheck(session.id, "Full Check");
+      await service.processPayment(session.id, check.id, 1000, 200);
+      expect(deriveDiningStage((await repo.findById(session.id))!)).toBe("PAYING");
+
+      // 9. Manual stage override capability
+      const { projection: overrideProj } = await service.setStage(session.id, "DESSERT");
+      expect(overrideProj.stage).toBe("DESSERT");
     });
   });
 });

@@ -64,19 +64,24 @@ The Restaurant Operating System is an event-driven, projection-based platform bu
 
 The `TableSession` models the complete lifecycle of a dining party from initial seating through final table reset:
 
+### Explicit Dining Stages
+
+The system defines unambiguous canonical dining stages that guide floor priorities:
+
+- **`SEATED`**: Table opened, diners seated, no food/drinks ordered yet.
+- **`DRINKS`**: Drinks ordered or actively in preparation at the bar.
+- **`ORDERING`**: Diners building order / guest proposing items.
+- **`APPETIZERS`**: Starters / small plates fired or in prep.
+- **`ENTREES`**: Pizzas and main courses fired or in prep.
+- **`DESSERT`**: Desserts fired or in prep.
+- **`CHECK_REQUESTED`**: Guest or server requested check.
+- **`PAYING`**: Check presented or partial payment authorized.
+- **`CLOSED`**: Session finalized and archived after $0.00 balance settlement.
+
 ### Derived Operational Projections
 
 Instead of maintaining brittle redundant flags, the `TableSession` derives its operational state on-demand:
 
-- **Current Dining Stage**:
-  - `seated`: Table opened, diners seated, no orders placed yet.
-  - `ordering`: Diners building order / guest proposing items.
-  - `food_in_flight`: Items fired to kitchen, active prep in progress.
-  - `dining`: Courses delivered, party enjoying meal.
-  - `check_presented`: Split checks calculated and presented.
-  - `settling`: Payments in flight / partial payment recorded.
-  - `cleared`: Table paid in full and ready to reset.
-  - `closed`: Session finalized and archived.
 - **Assigned Server**: Active employee responsible for table service.
 - **Diners / Seats**: Roster of seated guests, diner names, and seat assignments.
 - **Elapsed Seated Time**: Time since session opened.
@@ -85,7 +90,7 @@ Instead of maintaining brittle redundant flags, the `TableSession` derives its o
 - **Open Guest Requests**: Pending assistance and service tasks.
 - **Unpaid Balance**: Total billable amount minus authorized payments (integer cents).
 - **Payment State**: `unbilled`, `split_pending`, `partially_paid`, `fully_paid`.
-- **Operational Attention State**: Urgent heuristic flags for floor staff:
+- **Operational Attention State**: Urgent heuristic flags answering *"Which table needs me right now?"*:
   - `urgent_guest_request`: Unacknowledged guest service requests.
   - `kitchen_delayed`: Kitchen tickets exceeding target preparation time (>25m).
   - `check_requested`: Guest requested bill drop.
@@ -95,7 +100,26 @@ Instead of maintaining brittle redundant flags, the `TableSession` derives its o
 
 ---
 
-## 3. Auditable Domain Event Model
+## 3. Server-Facing Live Table Experience
+
+### Floor View ("Which table needs me right now?")
+- Live grid showing all dining areas with glanceable cards.
+- Displays table number, area, guest count, assigned server, dining stage badge, elapsed seated time, kitchen summary, unresolved request indicators, and total balance.
+- Attention priority sort brings urgent tables to the very top.
+
+### Mobile-First Table Session (One-Handed Operating Screen)
+- Optimized for one-handed phone use with thumb-zone primary action bar.
+- **Header**: Back to floor, table label, stage selector, elapsed time, server transfer.
+- **Urgent Attention Bar**: 1-tap acknowledge and completion for guest assistance requests.
+- **Orders & Coursing**: Grouped by course, guest proposal approval gate, 1-tap fire, add item drawer, void dialog with mandatory reason.
+- **Kitchen Status**: Station ticket view with interactive line simulation actions (`Accept`, `Start Prep`, `Mark Ready`, `Deliver`).
+- **Tasks & Requests**: Real-time service task queue with 1-tap fulfillment.
+- **Checks & Settlement**: Itemized / equal split check calculations with tip presets and $0.00 balance close gate.
+- **Activity & Audit Timeline**: Real-time chronological stream generated directly from domain events.
+
+---
+
+## 4. Auditable Domain Event Model
 
 Every operational mutation is published as a strongly-typed, immutable `DomainEvent`:
 
@@ -119,6 +143,7 @@ Every operational mutation is published as a strongly-typed, immutable `DomainEv
 | `REQUEST_CREATED` | `request` | Guest or server created service request. |
 | `REQUEST_ACKNOWLEDGED` | `request` | Staff acknowledged service request. |
 | `REQUEST_COMPLETED` | `request` | Staff fulfilled service request. |
+| `STAGE_CHANGED` | `session` | Dining stage updated or overridden. |
 | `CHECK_CREATED` | `check` | Check generated (full or split). |
 | `CHECK_CLAIMED` | `check` | Diner claimed check for payment. |
 | `PAYMENT_STARTED` | `payment` | Payment authorization initiated. |
@@ -127,7 +152,7 @@ Every operational mutation is published as a strongly-typed, immutable `DomainEv
 
 ---
 
-## 4. Service & Repository Boundaries
+## 5. Service & Repository Boundaries
 
 UI components and API handlers interact with the domain exclusively through the **`TableSessionService`** and **`TableSessionRepository`**:
 

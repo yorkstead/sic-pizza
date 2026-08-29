@@ -1,6 +1,6 @@
 import type { TableSessionRepository } from "./session-repository";
-import type { TableSession, Diner, TableSessionProjection } from "../models/session";
-import { projectTableSession, deriveFinancials } from "../models/session";
+import type { TableSession, Diner, TableSessionProjection, DiningStage } from "../models/session";
+import { projectTableSession, deriveFinancials, deriveDiningStage } from "../models/session";
 import type { OrderItem, SelectedModifier } from "../models/order";
 import type { KitchenTicket } from "../models/kitchen";
 import type { GuestRequest, RequestType } from "../models/request";
@@ -931,6 +931,28 @@ export class TableSessionService {
       "session",
       session.id,
       { closedAt: session.closedAt, closedBy: ctx.actorId },
+      ctx
+    );
+
+    await this.repo.save(session);
+    return { session, projection: projectTableSession(session) };
+  }
+
+  async setStage(
+    sessionId: string,
+    stage: DiningStage,
+    ctx: CommandContext = { actorType: "employee" }
+  ): Promise<{ session: TableSession; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    const prevStage = deriveDiningStage(session);
+    session.manualStageOverride = stage;
+
+    await this.emit(
+      session,
+      "STAGE_CHANGED",
+      "session",
+      session.id,
+      { fromStage: prevStage, toStage: stage, setBy: ctx.actorId },
       ctx
     );
 

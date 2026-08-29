@@ -6,14 +6,15 @@ import { checkSchema, paymentSchema, type Check, type Payment } from "./payment"
 import { domainEventSchema } from "./events";
 
 export const diningStageSchema = z.enum([
-  "seated",
-  "ordering",
-  "food_in_flight",
-  "dining",
-  "check_presented",
-  "settling",
-  "cleared",
-  "closed"
+  "SEATED",
+  "DRINKS",
+  "ORDERING",
+  "APPETIZERS",
+  "ENTREES",
+  "DESSERT",
+  "CHECK_REQUESTED",
+  "PAYING",
+  "CLOSED"
 ]);
 export type DiningStage = z.infer<typeof diningStageSchema>;
 
@@ -65,6 +66,7 @@ export const tableSessionSchema = z.object({
   openedByEmployeeId: z.string(),
   assignedServerId: z.string().optional(),
   joinTokenHash: z.string(),
+  manualStageOverride: diningStageSchema.optional(),
   openedAt: z.string(),
   closedAt: z.string().optional(),
   diners: z.array(dinerSchema).default([]),
@@ -79,6 +81,7 @@ export type TableSession = z.infer<typeof tableSessionSchema>;
 
 export interface TableSessionProjection {
   id: string;
+  tableId: string;
   tableLabel: string;
   stage: DiningStage;
   assignedServerId?: string;
@@ -160,32 +163,32 @@ export function derivePaymentState(
 }
 
 export function deriveDiningStage(session: TableSession): DiningStage {
-  if (session.closedAt) return "closed";
+  if (session.closedAt) return "CLOSED";
+  if (session.manualStageOverride) return session.manualStageOverride;
 
   const { totalCents, paidCents } = deriveFinancials(session.items, session.payments);
-  if (totalCents > 0 && paidCents >= totalCents) return "settling";
+  if (totalCents > 0 && paidCents >= totalCents) return "PAYING";
+  if (paidCents > 0) return "PAYING";
 
-  if (session.checks.some((c) => c.status === "presented" || c.status === "settling")) {
-    return "check_presented";
-  }
+  const checkRequested = session.requests.some(
+    (r) => r.type === "drop_check" && r.status !== "completed"
+  ) || session.checks.some((c) => c.status === "presented" || c.status === "settling");
+  if (checkRequested) return "CHECK_REQUESTED";
 
   const activeItems = session.items.filter((i) => i.status !== "voided");
-  if (activeItems.length === 0) return "seated";
+  if (activeItems.length === 0) return "SEATED";
 
-  const unconfirmedProposals = activeItems.filter((i) => i.status === "proposed" || i.status === "draft");
-  if (unconfirmedProposals.length > 0 && activeItems.every((i) => i.status === "proposed" || i.status === "draft")) {
-    return "ordering";
-  }
+  const isFiredOrBeyond = (course: string) =>
+    activeItems.some(
+      (i) => i.course === course && (i.status === "fired" || i.status === "preparing" || i.status === "ready" || i.status === "delivered")
+    );
 
-  const inFlight = activeItems.some(
-    (i) => i.status === "fired" || i.status === "preparing" || i.status === "ready"
-  );
-  if (inFlight) return "food_in_flight";
+  if (isFiredOrBeyond("desserts")) return "DESSERT";
+  if (isFiredOrBeyond("mains")) return "ENTREES";
+  if (isFiredOrBeyond("starters")) return "APPETIZERS";
+  if (isFiredOrBeyond("drinks")) return "DRINKS";
 
-  const delivered = activeItems.some((i) => i.status === "delivered");
-  if (delivered) return "dining";
-
-  return "ordering";
+  return "ORDERING";
 }
 
 export function deriveOperationalAttention(
@@ -235,7 +238,7 @@ export function deriveOperationalAttention(
   // Fully paid but session not closed
   const { totalCents, paidCents } = deriveFinancials(session.items, session.payments);
   if (totalCents > 0 && paidCents >= totalCents && !session.closedAt) {
-    reasons.push("Bill paid in full — table ready for clearing & reset");
+    reasons.push("Bill paid in full — ready for table reset");
     return {
       urgency: "ready_to_clear",
       reasons,
@@ -285,6 +288,7 @@ export function projectTableSession(
 
   return {
     id: session.id,
+    tableId: session.tableId,
     tableLabel: session.tableLabel,
     stage,
     assignedServerId: session.assignedServerId,

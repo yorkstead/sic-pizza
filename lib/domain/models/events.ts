@@ -26,6 +26,7 @@ export const domainEventTypeSchema = z.enum([
   "CHECK_CLAIMED",
   "PAYMENT_STARTED",
   "PAYMENT_COMPLETED",
+  "STAGE_CHANGED",
   "TABLE_CLOSED"
 ]);
 export type DomainEventType = z.infer<typeof domainEventTypeSchema>;
