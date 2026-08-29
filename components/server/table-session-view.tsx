@@ -29,7 +29,7 @@ import type {
 } from "@/lib/domain/models/session";
 import type { PizzaSelection } from "@/lib/demo/sic-pizza/catalog";
 import type { Course } from "@/lib/domain/models/menu";
-import type { SplitMode } from "@/lib/domain/models/order";
+import type { SplitMode, SelectedModifier } from "@/lib/domain/models/order";
 import { StageBadge } from "./stage-badge";
 import { AddItemDialog } from "./add-item-dialog";
 import { VoidItemDialog } from "./void-item-dialog";
@@ -47,7 +47,8 @@ interface TableSessionViewProps {
   onAddPizza: (
     pizza: PizzaSelection,
     ownership: { splitMode: SplitMode; assignedDinerIds: string[] },
-    course?: Course
+    course?: Course,
+    semanticModifiers?: SelectedModifier[]
   ) => void;
   onAddStandardItem: (
     name: string,

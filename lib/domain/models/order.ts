@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { courseSchema } from "./menu";
+import { modifierLevelSchema, modifierPlacementSchema } from "./modifiers";
 
 export const itemStatusSchema = z.enum([
   "draft",
@@ -19,8 +20,12 @@ export type SplitMode = z.infer<typeof splitModeSchema>;
 
 export const selectedModifierSchema = z.object({
   modifierOptionId: z.string(),
+  groupId: z.string().optional(),
   name: z.string(),
-  priceCents: z.number().int().nonnegative().default(0)
+  level: modifierLevelSchema.optional(),
+  placement: modifierPlacementSchema.optional(),
+  priceCents: z.number().int().nonnegative().default(0),
+  allergenAck: z.boolean().optional()
 });
 export type SelectedModifier = z.infer<typeof selectedModifierSchema>;
 

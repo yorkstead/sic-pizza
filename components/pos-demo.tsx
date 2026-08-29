@@ -23,7 +23,8 @@ import {
   type DomainEvent,
   evaluateAttentionRules,
   DEFAULT_ATTENTION_CONFIG,
-  type AttentionConfig
+  type AttentionConfig,
+  type SelectedModifier
 } from "@/lib/domain";
 import { FloorView } from "./server/floor-view";
 import { TableSessionView } from "./server/table-session-view";
@@ -612,29 +613,38 @@ export function PosDemo() {
                   projection={currentProjection}
                   currentServerId={SERVER_ID}
                   onBackToFloor={() => setSelectedTableId(null)}
-                  onAddPizza={async (pizza, ownership, course) => {
-                    const priceCents =
-                      (pizza.size === "small" ? 1400 : 1900) +
-                      pizza.toppings.length * 175 +
-                      (pizza.extraCheese ? 225 : 0);
+                  onAddPizza={async (pizza, ownership, course, semanticModifiers) => {
+                    const basePrice = pizza.size === "small" ? 1400 : 1900;
+                    const modifiersToUse: SelectedModifier[] = semanticModifiers || [
+                      ...pizza.toppings.map((t) => ({
+                        modifierOptionId: `opt_${t}`,
+                        name: t,
+                        level: "NORMAL" as const,
+                        placement: "WHOLE" as const,
+                        priceCents: 175
+                      })),
+                      ...(pizza.extraCheese
+                        ? [
+                            {
+                              modifierOptionId: "opt_xc",
+                              name: "Extra Cheese",
+                              level: "EXTRA" as const,
+                              placement: "WHOLE" as const,
+                              priceCents: 225
+                            }
+                          ]
+                        : [])
+                    ];
+
                     await service.addItem(
                       currentSession.id,
                       {
                         menuItemId: "pizza_custom",
-                        name: `${pizza.size} Custom Pizza`,
+                        name: `${pizza.size === "small" ? '12"' : '16"'} Sicilian Pizza`,
                         course: course || "mains",
                         stationId: "pizza-oven",
-                        basePriceCents: priceCents,
-                        selectedModifiers: [
-                          ...pizza.toppings.map((t) => ({
-                            modifierOptionId: `opt_${t}`,
-                            name: t,
-                            priceCents: 175
-                          })),
-                          ...(pizza.extraCheese
-                            ? [{ modifierOptionId: "opt_xc", name: "Extra Cheese", priceCents: 225 }]
-                            : [])
-                        ],
+                        basePriceCents: basePrice,
+                        selectedModifiers: modifiersToUse,
                         splitMode: ownership.splitMode,
                         assignedDinerIds: ownership.assignedDinerIds,
                         dinerId: ownership.assignedDinerIds[0]
