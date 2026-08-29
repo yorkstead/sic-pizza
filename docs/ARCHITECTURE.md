@@ -1,22 +1,91 @@
-# Architecture
+# Architecture: Restaurant Operating System
 
-## Product boundaries
+## System Overview
 
-1. **Identity and access** — employees, roles, device sessions, PIN verification. Production PINs are hashed and rate-limited.
-2. **Floor and table sessions** — locations, tables, session ownership, diners, rotating join tokens.
-3. **Catalog and pricing** — menus, availability, modifier groups, integer-cent price calculation, taxes.
-4. **Ordering** — server-authored items, guest proposals, employee confirmation, timing, discounts, voids.
-5. **Kitchen** — immutable submissions, tickets, stations, constrained lifecycle transitions.
-6. **Payments** — split allocation, tips, authorization/refund abstraction, provider idempotency, reconciliation.
-7. **Voice and safety** — keyed copy by configured tone; allergen, decline, refund, and complaint contexts force neutral language.
-8. **Audit and events** — append-only actor/aggregate events used for support, operational history, and eventual live projections.
+The Restaurant Operating System is an event-driven, projection-based platform built around a single operational primitive: the **Table Session**.
 
-## Runtime shape
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      RESTAURANT OPERATING SYSTEM                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                    SIC PIZZA DEMO RESTAURANT                      │  │
+│  │  - Pizza menu catalog, toppings, integer-cent modifier pricing    │  │
+│  │  - Feral / Dry / Neutral brand tone dictionary                    │  │
+│  │  - Dark-first visual branding & themed interactive UI slice       │  │
+│  └─────────────────────────────────┬─────────────────────────────────┘  │
+│                                    │ conforms to                        │
+│  ┌─────────────────────────────────▼─────────────────────────────────┐  │
+│  │                   RESTAURANT CONFIGURATION                        │  │
+│  │  - Station routing (Oven, Grill, Bar, Cold, Expo)                 │  │
+│  │  - Course definitions (Drinks, Starters, Mains, Desserts)         │  │
+│  │  - Operational task types (Water, Assistance, Clean, Check Drop)  │  │
+│  │  - Location & Tax policy, Voice configuration rules               │  │
+│  └─────────────────────────────────┬─────────────────────────────────┘  │
+│                                    │ runs on                            │
+│  ┌─────────────────────────────────▼─────────────────────────────────┐  │
+│  │                         PLATFORM CORE                             │  │
+│  │  - Table Session Aggregate (Diners, Courses, Tasks, Items)        │  │
+│  │  - Item State Machine & Server Proposal Confirmation Gate         │  │
+│  │  - Multi-stakeholder Projections (Guest, Server, KDS, Expo, Mgr) │  │
+│  │  - Append-Only Audit / Domain Event Stream                        │  │
+│  │  - Integer-Cent Math & Split-Allocation Payment Seams             │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-Next.js App Router provides staff and guest web surfaces. Server Components are the default route boundary; focused client components own demo interaction. The future persistence layer uses PostgreSQL through Drizzle and Zod validates every command at ingress. Live updates will project order and kitchen events over a transport adapter so the domain does not depend on WebSockets or a vendor.
+---
 
-Mutations should execute as application commands: validate → authorize → load aggregate → enforce invariant → write state and audit event in one transaction → publish after commit. Money is integer cents. Location scope is explicit in every query and authorization decision.
+## 1. Domain Boundaries
 
-## Prototype seams
+1. **Identity & Access Management (IAM)**
+   - Organizations, Locations, Employees, Roles (`server`, `bartender`, `runner`, `kitchen`, `expo`, `manager`), and Device Sessions.
+   - 4-digit PIN authentication with salted hashing, rate-limiting, and location-scoped permissions.
+2. **Floor & Session Management**
+   - Tables, floor zones, seating capacity, active session binding.
+   - Dynamic diner roster per session; rotating cryptographic join tokens for frictionless guest access.
+3. **Menu Catalog & Pricing Engine**
+   - Category hierarchy, modifier groups with min/max constraints, station assignments, allergen tags.
+   - Deterministic integer-cent price computation and tax rules.
+4. **Ordering & Coursing Aggregate**
+   - Unified item aggregate with diner attribution and course association.
+   - Dual ingress: Server-authored items vs Guest-proposed items.
+   - Invariant: Guest-proposed items require explicit employee confirmation before kitchen routing.
+   - Independent hold/fire controls per course and item.
+5. **Kitchen Display & Station Routing (KDS)**
+   - Item-level and ticket-level state machine: `draft` → `proposed` → `confirmed` → `held` → `fired` → `preparing` → `ready` → `delivered` → `voided`.
+   - Dynamic station routing (items routed specifically to Pizza Oven, Bar, Fryer, Sauté, or Pantry).
+   - Consolidated Expo view synchronizing course delivery.
+6. **Operational Task Engine**
+   - Real-time service tasks generated by guests or staff (e.g. `water_refill`, `call_server`, `condiments`, `drop_check`, `spill_cleanup`).
+   - Task claiming, assignment, SLA timers, and completion lifecycle.
+7. **Payments & Settlement**
+   - Multi-party split payment allocation (equal split, item-by-seat split, custom amount).
+   - Exact integer-cent balance tracking preventing penny rounding discrepancies.
+   - Deterministic payment gateway provider abstraction with mock and certified live implementations.
+8. **Append-Only Event Store & Projections**
+   - All state mutations recorded as immutable domain events.
+   - Live projections materialize current table state, station queues, runner dispatches, and floor telemetry.
 
-The current UI state is deliberately replaceable: `lib/domain` already owns business rules, `db/schema.ts` owns persistence shape, and the payment provider is an interface. The decorative QR and same-browser KDS simulation prove the workflow but are not security or real-time implementations.
+---
+
+## 2. Invariants & Safety Rules
+
+- **Zero Floating-Point Money**: All financial quantities (`unitPriceCents`, `subtotalCents`, `taxCents`, `tipCents`, `paidCents`, `balanceCents`) are strictly non-negative integers.
+- **Server Confirmation Gate**: No guest-proposed item can transition to `fired` or `preparing` without explicit employee authorization.
+- **Station Independence**: An item's station routing is determined by catalog configuration; multiple stations execute in parallel while Expo coordinates the combined course handoff.
+- **Sensitive Context Safety**: All system interactions involving food safety/allergens, payment declines, refunds, chargebacks, and service escalations unconditionally use neutral, factual language regardless of configured brand tone.
+- **Location Isolation**: Every query, command, session, table, and audit event strictly requires and enforces tenant and location scoping.
+
+---
+
+## 3. Technology Stack & Architectural Decisions
+
+- **Framework**: Next.js (App Router, Turbopack, React 19, strict mode, no `/src` directory).
+- **Language & Runtime**: TypeScript 5 (strict), Bun 1.3+.
+- **Styling & UI**: Tailwind CSS v4, custom-themed component primitives.
+- **Persistence & ORM**: PostgreSQL 16+, Drizzle ORM.
+- **Validation**: Zod for schema validation across ingress, server actions, and domain models.
+- **Mobile-First & PWA**: Designed for handheld POS terminals, kitchen touchscreens, and guest mobile browsers.

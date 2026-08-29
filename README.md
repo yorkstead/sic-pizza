@@ -1,36 +1,83 @@
-# SIC Pizza
+# Restaurant Operating System (SIC Pizza Demonstration)
 
-Mobile-first tableside POS and collaborative ordering prototype for a fictional pizza joint with questionable judgment and strict operational clarity.
+A modern, real-time, multi-stakeholder restaurant operating platform designed around a single unifying principle:
 
-## Current milestone
+> **One live table. Everyone sees what they need.**
 
-The foundation delivers a browser-runnable vertical slice:
+Rather than passing data across disjointed POS terminals, guest ordering apps, kitchen screens, and bar printers, every participant interacts with a purpose-built projection of the shared **Table Session**.
 
-- seeded employee dev-PIN (`0420`) and responsive staff shell;
-- multi-table floor, table session, diners, custom pizza modifiers, integer-cent pricing, and review;
-- server approval for customer-proposed items;
-- mocked kitchen submission and KDS lifecycle reflected in table status;
-- QR/join prototype at `/join/SIC-11` with no account required;
-- equal-split mocked card authorizations and tip display;
-- configurable `dry`, `feral`, and `neutral` voice modes with a forced neutral sensitive context;
-- append-only audit/event-history concept;
-- multi-location PostgreSQL schema in Drizzle.
+**SIC Pizza** serves as the fictional, fully-branded demonstration restaurant running on top of this general, restaurant-agnostic operating platform.
 
-The interactive milestone intentionally uses in-memory React state. The database schema is the persistence contract for the next milestone; no production credentials or payment details are needed to run this demo.
+---
 
-## Setup
+## The Operational Model
 
-Requirements: Bun 1.3+ and, only when exercising persistence, PostgreSQL 16+.
+```
+                      ┌─────────────────────────────────────────┐
+                      │            LIVE TABLE SESSION           │
+                      │  - Diners & Seats                       │
+                      │  - Courses & Items                      │
+                      │  - Operational Tasks & Help Requests    │
+                      │  - Station Routing & Kitchen Queue      │
+                      │  - Split Balances & Payments            │
+                      │  - Append-Only Audit Stream             │
+                      └────────────────────┬────────────────────┘
+                                           │
+         ┌───────────────┬─────────────────┼────────────────┬───────────────┐
+         ▼               ▼                 ▼                ▼               ▼
+   ┌───────────┐   ┌───────────┐     ┌───────────┐    ┌───────────┐   ┌───────────┐
+   │   GUEST   │   │  SERVER   │     │  KITCHEN  │    │   EXPO    │   │  MANAGER  │
+   │PROJECTION │   │PROJECTION │     │PROJECTION │    │PROJECTION │   │PROJECTION │
+   └───────────┘   └───────────┘     └───────────┘    └───────────┘   └───────────┘
+```
+
+The system directly eliminates major hospitality friction points:
+- **Zero forgotten requests**: Real-time service task queue (`water_refill`, `call_server`, `condiments`, `drop_check`).
+- **Synchronized guest & server ordering**: 1-tap server confirmation gate for guest item proposals.
+- **Continuous split reconciliation**: Real-time diner-level tracking with deterministic integer-cent math.
+- **Station-aware coursing & expo pacing**: Independent hold/fire controls per course (`drinks`, `starters`, `mains`, `desserts`).
+- **Frictionless shift handoffs**: Append-only event history providing full context to any staff member.
+
+---
+
+## Architectural Separation
+
+The codebase enforces strict separation across three tiers:
+
+1. **Platform Core (`lib/domain/core/`)**:
+   - Universal restaurant primitives: table session lifecycle, order/item aggregates, coursing, operational task board, multi-station state machine, integer-cent calculations, and append-only domain event envelopes.
+   - Completely agnostic of pizza, food types, or sarcasm.
+2. **Restaurant Configuration (`lib/domain/restaurant/`)**:
+   - Schema and definitions for physical floor layouts, kitchen stations (e.g. Pizza Oven, Bar, Cold Prep, Expo), coursing pacing, tax rates, and role permissions.
+3. **SIC Pizza Demo Content & Branding (`lib/demo/sic-pizza/`)**:
+   - Demonstration implementation featuring pizza customizers, integer-cent topping engines, dark-first UI tokens, and optional voice modes (`dry`, `feral`, `neutral`).
+
+---
+
+## Documentation
+
+- [`docs/PRODUCT_VISION.md`](docs/PRODUCT_VISION.md) — Comprehensive product vision, problem breakdowns, and stakeholder projections.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — System boundaries, invariants, technical stack, and design decisions.
+- [`docs/EVENT_MODEL.md`](docs/EVENT_MODEL.md) — Append-only domain event taxonomy and schema.
+- [`docs/BACKLOG.md`](docs/BACKLOG.md) — Phased multi-milestone roadmap.
+
+---
+
+## Getting Started
+
+Requirements: [Bun](https://bun.sh) 1.3+ and (optionally for persistence) PostgreSQL 16+.
 
 ```bash
 bun install
-cp .env.example .env.local
 bun run dev
 ```
 
-Open `http://localhost:3000`, enter PIN `0420`, and follow Floor → Order → KDS → Guests → Pay → History.
+Open `http://localhost:3000`, enter employee dev PIN `0420`, and explore the live table lifecycle:
+**Floor** → **Order** → **KDS** → **Guests** (`/join/SIC-11`) → **Pay** → **History**.
 
-## Commands
+---
+
+## Verification & Commands
 
 ```bash
 bun run lint
@@ -40,20 +87,3 @@ bun run build
 bun run db:generate
 bun run db:migrate
 ```
-
-## Architecture decisions
-
-- **App Router, no `/src`:** routes and layouts live in `app/`; interactive surfaces are explicit client components.
-- **Domain-first rules:** pricing, transitions, voice policy, and payment interfaces live in `lib/domain` and have no React dependency.
-- **Integer cents:** prices, tax, totals, tips, and payment amounts never use floating-point currency values.
-- **Server authority:** guest items are proposals until an employee confirms them; only valid transitions can reach the kitchen.
-- **Auditable by default:** the schema models immutable events with actor, aggregate, location, payload, and timestamp.
-- **Multi-location core:** organization and location ownership is present at the root of employee, table, and event data.
-- **Provider boundary:** payment authorization is an interface with a deterministic mock implementation.
-- **Voice as policy:** copy keys select a configured tone; sensitive contexts always select neutral text.
-
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/BACKLOG.md`](docs/BACKLOG.md) for boundaries and phased delivery.
-
-## Next milestone
-
-Persist the existing slice with authenticated server actions and transactions, rotate hashed QR join tokens, add live table/KDS updates, and introduce real role/device/session controls. Payment remains mocked until reconciliation, idempotency, refund, and decline flows are fully specified and tested.
