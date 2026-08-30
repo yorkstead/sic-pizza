@@ -1270,6 +1270,34 @@ export class TableSessionService {
     return { session, request, projection: projectTableSession(session) };
   }
 
+  async resolveEscalation(
+    sessionId: string,
+    requestId: string,
+    resolution: string,
+    ctx: CommandContext = { actorType: "employee" }
+  ): Promise<{ session: TableSession; request: GuestRequest; projection: TableSessionProjection }> {
+    const session = await this.mustGetSession(sessionId);
+    const request = session.requests.find((r) => r.id === requestId);
+    if (!request) throw new Error(`Request ${requestId} not found`);
+
+    request.status = "COMPLETED";
+    request.completedAt = new Date().toISOString();
+    request.completedByEmployeeId = ctx.actorId;
+    request.notes = resolution;
+
+    await this.emit(
+      session,
+      "ESCALATION_RESOLVED",
+      "request",
+      request.id,
+      { requestId: request.id, resolution, resolvedBy: ctx.actorId },
+      ctx
+    );
+
+    await this.repo.save(session);
+    return { session, request, projection: projectTableSession(session) };
+  }
+
   async createCheck(
     sessionId: string,
     title: string,

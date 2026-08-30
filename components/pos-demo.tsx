@@ -11,7 +11,8 @@ import {
   Lock,
   Bell,
   Sparkles,
-  ArrowRightLeft
+  ArrowRightLeft,
+  ShieldAlert
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ import { AttentionQueue } from "./server/attention-queue";
 import { DoThisNext } from "./server/do-this-next";
 import { MultiStationKDS } from "./kitchen/multi-station-kds";
 import { ShiftHandoffDialog } from "./server/shift-handoff-dialog";
+import { ManagerCommandCenter } from "./manager/manager-command-center";
 
 const RESTAURANT_ID = "sic_pizza_org";
 const LOCATION_ID = "loc_downtown";
@@ -61,7 +63,7 @@ export function PosDemo() {
   const [authenticated, setAuthenticated] = useState(false);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
-  const [view, setView] = useState<"floor" | "dothisnext" | "queue" | "kds" | "join" | "history">("floor");
+  const [view, setView] = useState<"floor" | "dothisnext" | "queue" | "kds" | "manager" | "join" | "history">("floor");
   const [selectedTableId, setSelectedTableId] = useState<string | null>("tbl_11");
   const [attentionConfig, setAttentionConfig] = useState<AttentionConfig>(DEFAULT_ATTENTION_CONFIG);
   const [dismissedItemIds, setDismissedItemIds] = useState<Set<string>>(new Set());
@@ -510,6 +512,15 @@ export function PosDemo() {
           >
             <QrCode className="size-4" />
             Guest Join QR
+          </Button>
+
+          <Button
+            variant={view === "manager" ? "secondary" : "ghost"}
+            className="w-full justify-start"
+            onClick={() => setView("manager")}
+          >
+            <ShieldAlert className="size-4 text-amber-400" />
+            Manager Hub
           </Button>
 
           <Button
@@ -1012,6 +1023,40 @@ export function PosDemo() {
             </div>
           )}
 
+          {/* Manager Operations Command Center View */}
+          {view === "manager" && (
+            <ManagerCommandCenter
+              sessions={sessions}
+              onSelectTable={(tblId) => {
+                setSelectedTableId(tblId);
+                setView("floor");
+              }}
+              onTransferTable={(sId) => {
+                const s = sessions.find((item) => item.id === sId);
+                if (s) {
+                  setSelectedTableId(s.tableId);
+                  setView("floor");
+                }
+              }}
+              onOpenSectionHandoff={() => setIsShiftHandoffOpen(true)}
+              onOpenAuditHistory={() => setView("history")}
+              onResolveRequest={async (sId, reqId, resolution) => {
+                await service.resolveEscalation(sId, reqId, resolution, {
+                  actorType: "employee",
+                  actorId: "emp_sam_mgr"
+                });
+                triggerUpdate();
+              }}
+              onApproveProposal={async (sId, itemId) => {
+                await service.approveItem(sId, itemId, {
+                  actorType: "employee",
+                  actorId: "emp_sam_mgr"
+                });
+                triggerUpdate();
+              }}
+            />
+          )}
+
           {view === "history" && (
             <div className="space-y-6 max-w-3xl">
               <div>
@@ -1062,7 +1107,7 @@ export function PosDemo() {
       {/* Fixed Mobile Bottom Navigation Bar */}
       <nav
         aria-label="Server primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t bg-background/95 px-1 py-2 backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-7 border-t bg-background/95 px-1 py-2 backdrop-blur lg:hidden"
       >
         <button
           onClick={() => setView("dothisnext")}
@@ -1115,6 +1160,16 @@ export function PosDemo() {
         >
           <ChefHat className="size-4" />
           Kitchen
+        </button>
+
+        <button
+          onClick={() => setView("manager")}
+          className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-bold ${
+            view === "manager" ? "bg-secondary text-primary" : "text-muted-foreground"
+          }`}
+        >
+          <ShieldAlert className="size-4 text-amber-400" />
+          Mgr
         </button>
 
         <button
