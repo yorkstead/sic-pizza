@@ -1,190 +1,75 @@
-# Architecture: Restaurant Operating System
+# Platform Architecture & Technical Reference
 
-## System Overview
+## 1. System Overview
 
-The Restaurant Operating System is an event-driven, projection-based platform built around a single operational aggregate root: the **Table Session**.
+The **Restaurant Operating System** is an event-sourced, projection-driven hospitality platform designed around a single core principle:
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      RESTAURANT OPERATING SYSTEM                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                    SIC PIZZA DEMO RESTAURANT                      │  │
-│  │  - Pizza menu catalog, toppings, integer-cent modifier pricing    │  │
-│  │  - Feral / Dry / Neutral brand tone dictionary                    │  │
-│  │  - Dark-first visual branding & themed interactive UI slice       │  │
-│  └─────────────────────────────────┬─────────────────────────────────┘  │
-│                                    │ conforms to                        │
-│  ┌─────────────────────────────────▼─────────────────────────────────┐  │
-│  │                   RESTAURANT CONFIGURATION                        │  │
-│  │  - Dining Area & Table topology                                   │  │
-│  │  - Station routing (Oven, Grill, Bar, Cold, Expo)                 │  │
-│  │  - Course definitions (Drinks, Starters, Mains, Desserts)         │  │
-│  │  - Operational task types (Water, Assistance, Clean, Check Drop)  │  │
-│  │  - Location & Tax policy, Voice configuration rules               │  │
-│  └─────────────────────────────────┬─────────────────────────────────┘  │
-│                                    │ runs on                            │
-│  ┌─────────────────────────────────▼─────────────────────────────────┐  │
-│  │                         PLATFORM CORE                             │  │
-│  │  - TableSession Aggregate Root (Diners, Courses, Tasks, Items)    │  │
-│  │  - Domain Services & Invariant Enforcement Layer                  │  │
-│  │  - Diner Ownership & Pre-Split Continuous Allocation Engine       │  │
-│  │  - Multi-station Kitchen Lifecycle (Queued -> InPrep -> Ready)    │  │
-│  │  - Multi-stakeholder Projections (Guest, Server, KDS, Expo, Mgr) │  │
-│  │  - Append-Only Audit & Domain Event Stream                        │  │
-│  │  - Integer-Cent Math & Deterministic Remainder Handling           │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+> **One live TableSession aggregate. Purpose-built projections for every stakeholder.**
+
+Unlike legacy POS software built as siloed cashier terminals with bolt-on KDS screens, the platform treats the dining table as a real-time collaborative state machine.
+
+```mermaid
+graph TD
+    A[Client Handheld / Terminal / Guest QR] -->|Idempotent Mutation Envelope| B(Client Mutation Queue)
+    B -->|Transport Adapter| C(TableSessionService)
+    C -->|Invariant Validation| D{Domain Aggregates}
+    D -->|Append Immutable Event| E[(Append-Only Event Store)]
+    D -->|Persist Snapshot| F[(PostgreSQL / In-Memory Session Repo)]
+    E -->|Event Stream| G[Projection Engine]
+    G --> H[Floor View Projection]
+    G --> I[Multi-Station KDS Projections]
+    G --> J[Universal Attention Queue]
+    G --> K[Manager Command Center]
+    G --> L[Service Analytics Engine]
+    G --> M[Guest Web Session]
 ```
 
 ---
 
-## 1. Domain Entities & Aggregate Boundaries
+## 2. Core Domain Invariants & Rules
 
-### Core Domain Entities
-
-1. **`Restaurant` / Organization**: Top-level tenant entity with currency, timezone, and global brand settings.
-2. **`Location`**: Physical store location with specific tax rate, operating hours, and active employees.
-3. **`DiningArea`**: Physical floor zone (e.g. `Main Dining`, `Patio`, `Bar Area`, `Lounge`).
-4. **`DiningTable`**: Specific physical table with seating capacity and real-time status (`available`, `occupied`, `reserved`, `dirty`).
-5. **`ServicePeriod`**: Active service window (e.g. `Lunch`, `Dinner`, `Happy Hour`, `Late Night`).
-6. **`Employee` & `Role`**: Staff member bound to location with assigned role (`server`, `bartender`, `runner`, `kitchen`, `expo`, `manager`, `host`, `admin`) and hashed PIN credentials.
-7. **`Menu`, `MenuItem`, `ModifierGroup`, `ModifierOption`**: Hierarchical catalog with item station routing, course assignments, allergen tags, and integer-cent modifier pricing.
-8. **`Course`**: Pacing category (`drinks`, `starters`, `mains`, `desserts`).
-9. **`OrderItem` & `Order`**: Item instance tied to table session, seat/diner, station, course, lifecycle state, split mode (`single`, `shared_diners`, `whole_table`), and assigned diners.
-10. **`KitchenStation` & `KitchenTicket`**: Station queue (e.g. Pizza Oven, Bar, Cold Prep, Expo) managing ticket-level and item-level preparation states.
-11. **`GuestRequest`**: Operational task request (`water_refill`, `call_server`, `condiments`, `drop_check`, `spill_cleanup`, `cutlery`) with status (`pending` → `acknowledged` → `completed`).
-12. **`Check` & `Payment`**: Bill partitions (equal split or diner-itemized split) and gateway payment records tracking integer-cent balances and tips.
-13. **`AuditEvent` / `DomainEvent`**: Immutable record of every operational mutation.
-
----
-
-## 2. The TableSession Aggregate Root
-
-The `TableSession` models the complete lifecycle of a dining party from initial seating through final table reset:
-
-### Explicit Dining Stages
-
-The system defines unambiguous canonical dining stages that guide floor priorities:
-
-- **`SEATED`**: Table opened, diners seated, no food/drinks ordered yet.
-- **`DRINKS`**: Drinks ordered or actively in preparation at the bar.
-- **`ORDERING`**: Diners building order / guest proposing items.
-- **`APPETIZERS`**: Starters / small plates fired or in prep.
-- **`ENTREES`**: Pizzas and main courses fired or in prep.
-- **`DESSERT`**: Desserts fired or in prep.
-- **`CHECK_REQUESTED`**: Guest or server requested check.
-- **`PAYING`**: Check presented or partial payment authorized.
-- **`CLOSED`**: Session finalized and archived after $0.00 balance settlement.
-
-### Derived Operational Projections
-
-Instead of maintaining brittle redundant flags, the `TableSession` derives its operational state on-demand:
-
-- **Assigned Server**: Active employee responsible for table service.
-- **Diners / Seats**: Roster of seated guests, diner names, and seat assignments.
-- **Elapsed Seated Time**: Time since session opened.
-- **Active Orders & Coursing**: Unvoided items grouped by course.
-- **Kitchen Progress**: Aggregated station prep state (`not_ordered`, `queued`, `preparing`, `ready_for_runner`, `all_delivered`).
-- **Open Guest Requests**: Pending assistance and service tasks.
-- **Pre-Split Diner Financials**: Individual subtotals, shared items portions, proportional tax allocation, discounts, paid amounts, and unpaid balances.
-- **Table Unpaid Balance**: Total billable amount minus authorized payments (integer cents).
-- **Payment State**: `unbilled`, `split_pending`, `partially_paid`, `fully_paid`.
-- **Operational Attention State**: Urgent heuristic flags answering *"Which table needs me right now?"*:
-  - `urgent_guest_request`: Unacknowledged guest service requests.
-  - `kitchen_delayed`: Kitchen tickets exceeding target preparation time (>25m).
-  - `check_requested`: Guest requested bill drop.
-  - `ready_to_clear`: Bill settled in full, table needs reset.
-  - `idle_attention_needed`: Table open without server assignment or idle >15m without food.
-  - `normal`: Routine service state.
+1. **Exact Integer-Cent Arithmetic**:
+   - Floating-point arithmetic for currency is strictly prohibited.
+   - All subtotals, modifier charges, half-topping splits, discounts, taxes, and tips are computed as non-negative integer cents.
+   - Shared item divisions calculate deterministic integer quotients and assign remainder cents to the primary diner or designated party.
+2. **Zero Duplicate Kitchen Firing Invariant**:
+   - Every mutation envelope carries an `idempotencyKey`.
+   - Re-delivered or retried course fires, item additions, and payments return cached snapshots without re-executing actions or printing/firing duplicate tickets.
+3. **Continuous Pre-Split Reconciliation**:
+   - Diner item ownership is tracked at entry (`single`, `shared_diners`, `whole_table`).
+   - Checks are continuously pre-split in real time; servers never reconstruct bill splits at table turn time.
+4. **Invalid-State Prevention**:
+   - Semantic modifiers are strictly validated prior to kitchen dispatch (mutually exclusive options, required selections, portion placement, size constraints, allergen acknowledgments, and 86'd out-of-stock items).
+5. **Universal Attention Routing**:
+   - Service requests are role-routed deterministically (Runners, Bartenders, Servers, Managers) and track age and escalation thresholds ($2\text{m}, 4\text{m}, 8\text{m}$).
 
 ---
 
-## 3. Diner-Level Item Ownership & Continuous Pre-Split Settlement
+## 3. Platform Core vs. Tenant Configuration
 
-> *"The check should already be split before anybody asks to split it."*
+The platform architecture enforces strict separation between the domain engine and restaurant tenant configurations:
 
-### First-Class Item Ownership Modes
-1. **Single Diner (`single`)**: Item is 100% owned by one specific diner.
-2. **Multiple Diners (`shared_diners`)**: Item is shared proportionally among a designated list of diners (e.g. 50/50, or custom shares).
-3. **Whole Table (`whole_table`)**: Item is divided equally across all active diners in the session.
-
-### Deterministic Integer-Cent Allocation Math
-- Floating-point calculations are strictly forbidden.
-- For an item or tax total of $C$ cents divided among $N$ participants with weights $W_i$:
-  $$\text{cents}_i = \left\lfloor \frac{C \cdot W_i}{\sum W} \right\rfloor$$
-  $$\text{remainder} = C - \sum_{i=1}^N \text{cents}_i$$
-- Remainder pennies are distributed deterministically to participants with the largest fractional remainders.
-- **Invariant**: The sum of allocated diner cents always equals the total source cents exactly down to the penny.
+| Component | Responsibility |
+| :--- | :--- |
+| **Platform Core (`lib/domain/`)** | Universal domain aggregates (`TableSession`, `OrderItem`, `KitchenTicket`, `GuestRequest`, `Check`, `Payment`), attention rules engine, modifier validation, offline queue, and event taxonomy. Zero cuisine dependencies. |
+| **Tenant Configuration (`lib/domain/models/tenant.ts`)** | Declarative metadata per restaurant brand: branding/logos, kitchen station topologies, menu categories, modifier groups, dining room table layouts, employee PINs, and service policies. |
+| **Demo Tenants** | `SIC_PIZZA_TENANT` (Artisan Wood-Fired Pizzeria) and `SAKURA_IZAKAYA_TENANT` (Robata Yakitori & Sushi Bar). |
 
 ---
 
-## 4. Server-Facing Live Table Experience
+## 4. Multi-Station Kitchen Display System (KDS) & Expo
 
-### Floor View ("Which table needs me right now?")
-- Live grid showing all dining areas with glanceable cards.
-- Displays table number, area, guest count, assigned server, dining stage badge, elapsed seated time, kitchen summary, unresolved request indicators, and total balance.
-- Attention priority sort brings urgent tables to the very top.
-
-### Mobile-First Table Session (One-Handed Operating Screen)
-- Optimized for one-handed phone use with thumb-zone primary action bar.
-- **Header**: Back to floor, table label, stage selector, elapsed time, server transfer.
-- **Urgent Attention Bar**: 1-tap acknowledge and completion for guest assistance requests.
-- **Orders & Coursing**: Grouped by course, guest proposal approval gate, 1-tap fire, add item drawer with ownership selection, split modification dialog, void dialog with mandatory reason.
-- **Kitchen Status**: Station ticket view with interactive line simulation actions (`Accept`, `Start Prep`, `Mark Ready`, `Deliver`).
-- **Tasks & Requests**: Real-time service task queue with 1-tap fulfillment.
-- **Pre-Split Checks & Settlement**: Whole-table summary, shared item breakdown, individual diner cards with 1-tap payment, tip presets, and $0.00 balance close gate.
-- **Activity & Audit Timeline**: Real-time chronological stream generated directly from domain events.
+An order is not a flat paper ticket. It projects into station-specific queues:
+- Stations: `PIZZA`, `GRILL`, `FRY`, `SALAD`, `BAR`, `DESSERT`, and `EXPO`.
+- Stations receive only relevant items and modifiers with placement context (`[Left 1/2]`, `[Right 1/2]`, `NO`, `EXTRA`, `SIDE`).
+- The **Expo Master View** synthesizes all station tickets for a table, indicating multi-station completion status before food runner dispatch.
 
 ---
 
-## 5. Auditable Domain Event Model
+## 5. Offline Resiliency & Synchronization
 
-Every operational mutation is published as a strongly-typed, immutable `DomainEvent`:
-
-| Event Type | Aggregate | Trigger Description |
-| :--- | :--- | :--- |
-| `TABLE_OPENED` | `session` | Party seated; session created. |
-| `DINER_ADDED` | `session` | Guest joined via QR or server added diner. |
-| `DINER_REMOVED` | `session` | Diner removed (only permitted if no active items). |
-| `TABLE_TRANSFERRED` | `session` | Table reassigned to another server. |
-| `ITEM_PROPOSED` | `item` | Guest proposed an item from mobile view. |
-| `ITEM_APPROVED` | `item` | Server approved guest proposal. |
-| `ITEM_ADDED` | `item` | Server added item directly to order with designated ownership. |
-| `ITEM_MODIFIED` | `item` | Item modifiers or instructions updated prior to prep. |
-| `ITEM_OWNERSHIP_UPDATED` | `item` | Item ownership / split shares updated. |
-| `ITEM_CLAIMED` | `item` | Diner claimed or joined ownership of an item. |
-| `ITEM_UNCLAIMED` | `item` | Diner unclaimed an item share. |
-| `ITEM_VOIDED` | `item` | Item voided with mandatory reason and authorizer ID. |
-| `COURSE_FIRED` | `order` | Server fired a course to the kitchen. |
-| `TICKET_CREATED` | `ticket` | Station ticket created from fired course items. |
-| `TICKET_ACCEPTED` | `ticket` | Line cook accepted station ticket. |
-| `ITEM_STARTED` | `item` | Line cook started item preparation. |
-| `ITEM_READY` | `item` | Station marked item ready for expo / runner. |
-| `ITEM_DELIVERED` | `item` | Food runner marked item delivered to seat. |
-| `REQUEST_CREATED` | `request` | Guest or server created service request. |
-| `REQUEST_ACKNOWLEDGED` | `request` | Staff acknowledged service request. |
-| `REQUEST_COMPLETED` | `request` | Staff fulfilled service request. |
-| `STAGE_CHANGED` | `session` | Dining stage updated or overridden. |
-| `CHECK_CREATED` | `check` | Check generated (full or split). |
-| `CHECK_CLAIMED` | `check` | Diner claimed check for payment. |
-| `PAYMENT_STARTED` | `payment` | Payment authorization initiated. |
-| `PAYMENT_COMPLETED` | `payment` | Payment authorized and check balance reduced. |
-| `DINER_PAYMENT_PROCESSED` | `payment` | Diner balance payment authorized. |
-| `TABLE_CLOSED` | `session` | Table closed (requires $0.00 unpaid balance). |
-
----
-
-## 6. Service & Repository Boundaries
-
-UI components and API handlers interact with the domain exclusively through the **`TableSessionService`** and **`TableSessionRepository`**:
-
-- **Command Handlers**: Methods such as `openTableSession()`, `proposeItem()`, `approveItem()`, `updateItemOwnership()`, `claimItem()`, `unclaimItem()`, `fireCourse()`, `markTicketItemReady()`, `processPayment()`, `processDinerPayment()`, `closeTableSession()`.
-- **Invariants**:
-  - Direct database row mutation for state transitions is prohibited.
-  - Zero floating-point arithmetic.
-  - Guest proposals must be approved by an employee before kitchen dispatch.
-  - Voids require a mandatory audit reason.
-  - Table closure is blocked while unpaid balances or pending guest requests remain.
+- **Client Mutation Queue**: 4-state lifecycle (`PENDING` $\to$ `SYNCING` $\to$ `SYNCED` / `RETRYING` $\to$ `FAILED`).
+- **Offline Boundaries**:
+  - Permitted offline: Item entry, course firing, guest requests, section transfers.
+  - Prohibited offline: Live gateway payment capture, session closure.
+- **Transport Abstraction**: Generic `TransportAdapter` interface decoupling domain logic from specific WebSocket/SSE/Server Action transports.

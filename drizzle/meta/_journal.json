@@ -8,6 +8,13 @@
       "when": 1786659863876,
       "tag": "0000_curved_apocalypse",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788121259747,
+      "tag": "0001_clear_hydra",
+      "breakpoints": true
     }
   ]
 }
