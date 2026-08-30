@@ -46,6 +46,22 @@ export class TableSessionService {
     return event;
   }
 
+  private checkIdempotency<T>(session: TableSession, key?: string): T | null {
+    if (!key) return null;
+    if (!session.executedIdempotencyKeys) session.executedIdempotencyKeys = {};
+    if (session.executedIdempotencyKeys[key]) {
+      return session.executedIdempotencyKeys[key] as T;
+    }
+    return null;
+  }
+
+  private recordIdempotency<T>(session: TableSession, key: string | undefined, result: T): void {
+    if (!key) return;
+    if (!session.executedIdempotencyKeys) session.executedIdempotencyKeys = {};
+    session.executedIdempotencyKeys[key] = result;
+    session.version = (session.version || 1) + 1;
+  }
+
   async openTableSession(
     params: {
       id?: string;
@@ -98,7 +114,9 @@ export class TableSessionService {
       requests: [],
       checks: [],
       payments: [],
-      events: []
+      events: [],
+      version: 1,
+      executedIdempotencyKeys: {}
     };
 
     await this.emit(
@@ -438,6 +456,11 @@ export class TableSessionService {
     ctx: CommandContext = { actorType: "employee" }
   ): Promise<{ session: TableSession; item: OrderItem; projection: TableSessionProjection }> {
     const session = await this.mustGetSession(sessionId);
+    const cached = this.checkIdempotency<OrderItem>(session, ctx.idempotencyKey);
+    if (cached) {
+      return { session, item: cached, projection: projectTableSession(session) };
+    }
+
     const itemId = `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const now = new Date().toISOString();
 
@@ -467,6 +490,8 @@ export class TableSessionService {
     };
 
     session.items.push(item);
+    this.recordIdempotency(session, ctx.idempotencyKey, item);
+
     await this.emit(
       session,
       "ITEM_ADDED",
@@ -678,6 +703,11 @@ export class TableSessionService {
       throw new Error("Permission denied: Guests cannot fire kitchen courses");
     }
     const session = await this.mustGetSession(sessionId);
+    const cached = this.checkIdempotency<KitchenTicket[]>(session, ctx.idempotencyKey);
+    if (cached) {
+      return { session, tickets: cached, projection: projectTableSession(session) };
+    }
+
     const itemsToFire = session.items.filter(
       (i) => i.course === course && (i.status === "confirmed" || i.status === "held")
     );
@@ -775,6 +805,7 @@ export class TableSessionService {
       ctx
     );
 
+    this.recordIdempotency(session, ctx.idempotencyKey, newTickets);
     await this.repo.save(session);
     return { session, tickets: newTickets, projection: projectTableSession(session) };
   }
@@ -1038,6 +1069,11 @@ export class TableSessionService {
     ctx: CommandContext = { actorType: "guest" }
   ): Promise<{ session: TableSession; request: GuestRequest; projection: TableSessionProjection }> {
     const session = await this.mustGetSession(sessionId);
+    const cached = this.checkIdempotency<GuestRequest>(session, ctx.idempotencyKey);
+    if (cached) {
+      return { session, request: cached, projection: projectTableSession(session) };
+    }
+
     const category = normalizeRequestCategory(rawCategoryOrType);
     const reqId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const diner = session.diners.find((d) => d.id === dinerId);
@@ -1064,6 +1100,8 @@ export class TableSessionService {
     };
 
     session.requests.push(request);
+    this.recordIdempotency(session, ctx.idempotencyKey, request);
+
     await this.emit(
       session,
       "REQUEST_CREATED",
@@ -1463,6 +1501,11 @@ export class TableSessionService {
     ctx: CommandContext = { actorType: "guest" }
   ): Promise<{ session: TableSession; payment: Payment; projection: TableSessionProjection }> {
     const session = await this.mustGetSession(sessionId);
+    const cached = this.checkIdempotency<Payment>(session, ctx.idempotencyKey);
+    if (cached) {
+      return { session, payment: cached, projection: projectTableSession(session) };
+    }
+
     if (amountCents <= 0) throw new Error("Payment amount must be positive");
 
     // Ensure or find a check for this diner
@@ -1507,6 +1550,7 @@ export class TableSessionService {
     };
 
     session.payments.push(payment);
+    this.recordIdempotency(session, ctx.idempotencyKey, payment);
 
     check.paidCents += amountCents;
     check.tipCents += tipCents;

@@ -82,7 +82,9 @@ export const tableSessionSchema = z.object({
   requests: z.array(guestRequestSchema).default([]),
   checks: z.array(checkSchema).default([]),
   payments: z.array(paymentSchema).default([]),
-  events: z.array(domainEventSchema).default([])
+  events: z.array(domainEventSchema).default([]),
+  version: z.number().int().nonnegative().default(1),
+  executedIdempotencyKeys: z.record(z.string(), z.any()).default({})
 });
 export type TableSession = z.infer<typeof tableSessionSchema>;
 
@@ -162,7 +164,9 @@ export function deriveFinancials(
     requests: [],
     checks: [],
     payments: [...payments],
-    events: []
+    events: [],
+    version: 1,
+    executedIdempotencyKeys: {}
   };
 
   const summary = deriveTableBillSummary(dummySession, taxRatePercent);

@@ -27,7 +27,8 @@ import {
   evaluateAttentionRules,
   DEFAULT_ATTENTION_CONFIG,
   type AttentionConfig,
-  type SelectedModifier
+  type SelectedModifier,
+  ClientMutationQueue
 } from "@/lib/domain";
 import { FloorView } from "./server/floor-view";
 import { TableSessionView } from "./server/table-session-view";
@@ -37,6 +38,7 @@ import { MultiStationKDS } from "./kitchen/multi-station-kds";
 import { ShiftHandoffDialog } from "./server/shift-handoff-dialog";
 import { ManagerCommandCenter } from "./manager/manager-command-center";
 import { ServiceAnalyticsView } from "./analytics/service-analytics-view";
+import { ConnectivityStatusBar } from "./offline/connectivity-status-bar";
 
 const RESTAURANT_ID = "sic_pizza_org";
 const LOCATION_ID = "loc_downtown";
@@ -74,10 +76,19 @@ export function PosDemo() {
   // Repository & Domain Service instances
   const repo = useMemo(() => new InMemoryTableSessionRepository(), []);
   const service = useMemo(() => new TableSessionService(repo), [repo]);
+  const mutationQueue = useMemo(() => new ClientMutationQueue(), []);
 
   // Reactive state trigger
   const [revision, setRevision] = useState(0);
   const triggerUpdate = () => setRevision((r) => r + 1);
+
+  const handleFlushQueue = async () => {
+    await mutationQueue.flush(async () => {
+      // Synchronize queued mutation idempotently
+      triggerUpdate();
+      return { success: true };
+    });
+  };
 
   // Seed default floor state
   useEffect(() => {
@@ -587,7 +598,9 @@ export function PosDemo() {
         </header>
 
         {/* Dynamic Main Body Content */}
-        <div className="p-4 md:p-7">
+        <div className="p-4 md:p-7 space-y-4">
+          <ConnectivityStatusBar queue={mutationQueue} onFlush={handleFlushQueue} />
+
           {view === "dothisnext" && (
             <DoThisNext
               items={attentionItems}

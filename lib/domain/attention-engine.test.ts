@@ -43,6 +43,8 @@ function createMockSession(overrides: Partial<TableSession> = {}): TableSession 
     checks: [],
     payments: [],
     events: [],
+    version: 1,
+    executedIdempotencyKeys: {},
     ...overrides
   };
 }
