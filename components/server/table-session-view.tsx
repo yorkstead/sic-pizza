@@ -1462,6 +1462,7 @@ export function TableSessionView({
       <TransferTableDialog
         isOpen={isTransferOpen}
         onClose={() => setIsTransferOpen(false)}
+        session={session}
         tableLabel={session.tableLabel}
         currentServerName={session.assignedServerId || "Jordan"}
         onConfirmTransfer={onTransferTable}

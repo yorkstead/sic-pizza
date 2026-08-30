@@ -9,6 +9,7 @@ import type { Check, Payment } from "../models/payment";
 import type { DomainEvent, ActorType } from "../models/events";
 import { createDomainEvent } from "../models/events";
 import type { Course } from "../models/menu";
+import { deriveTableTransferSummary } from "../models/handoff";
 
 export interface CommandContext {
   actorType: ActorType;
@@ -88,6 +89,7 @@ export class TableSessionService {
       servicePeriodId: params.servicePeriodId,
       openedByEmployeeId: params.openedByEmployeeId,
       assignedServerId: params.assignedServerId ?? params.openedByEmployeeId,
+      assistingEmployeeIds: [],
       joinTokenHash,
       openedAt: now,
       diners,
@@ -205,16 +207,112 @@ export class TableSessionService {
     const prevServer = session.assignedServerId;
     session.assignedServerId = toEmployeeId;
 
+    // Automatically reassign server-routed open requests to the new server
+    for (const req of session.requests) {
+      if ((req.status === "OPEN" || req.status === "ACKNOWLEDGED" || req.status === "IN_PROGRESS") &&
+          (req.assignedRole === "server" || req.assignedEmployeeId === prevServer)) {
+        req.assignedEmployeeId = toEmployeeId;
+      }
+    }
+
+    const summary = deriveTableTransferSummary(session);
+
     await this.emit(
       session,
       "TABLE_TRANSFERRED",
       "session",
       session.id,
-      { fromEmployeeId: prevServer, toEmployeeId, reason },
+      {
+        fromEmployeeId: prevServer,
+        toEmployeeId,
+        reason,
+        transferSummary: summary
+      },
       ctx
     );
 
     await this.repo.save(session);
+    return { session, projection: projectTableSession(session) };
+  }
+
+  async transferMultipleTables(
+    sessionIds: string[],
+    toEmployeeId: string,
+    reason: string,
+    ctx: CommandContext
+  ): Promise<{ sessions: TableSession[]; projections: TableSessionProjection[] }> {
+    if (ctx.actorType === "guest") {
+      throw new Error("Permission denied: Guests cannot transfer tables");
+    }
+
+    const updatedSessions: TableSession[] = [];
+    const projections: TableSessionProjection[] = [];
+
+    for (const id of sessionIds) {
+      const res = await this.transferTable(id, toEmployeeId, reason, ctx);
+      updatedSessions.push(res.session);
+      projections.push(res.projection);
+    }
+
+    return { sessions: updatedSessions, projections };
+  }
+
+  async assignAssistingServer(
+    sessionId: string,
+    assistantEmployeeId: string,
+    ctx: CommandContext
+  ): Promise<{ session: TableSession; projection: TableSessionProjection }> {
+    if (ctx.actorType === "guest") {
+      throw new Error("Permission denied: Guests cannot assign assisting staff");
+    }
+    const session = await this.mustGetSession(sessionId);
+    if (!session.assistingEmployeeIds) {
+      session.assistingEmployeeIds = [];
+    }
+
+    if (!session.assistingEmployeeIds.includes(assistantEmployeeId)) {
+      session.assistingEmployeeIds.push(assistantEmployeeId);
+      await this.emit(
+        session,
+        "ASSISTANT_ASSIGNED",
+        "session",
+        session.id,
+        { assistantEmployeeId, assignedBy: ctx.actorId },
+        ctx
+      );
+      await this.repo.save(session);
+    }
+
+    return { session, projection: projectTableSession(session) };
+  }
+
+  async removeAssistingServer(
+    sessionId: string,
+    assistantEmployeeId: string,
+    ctx: CommandContext
+  ): Promise<{ session: TableSession; projection: TableSessionProjection }> {
+    if (ctx.actorType === "guest") {
+      throw new Error("Permission denied: Guests cannot modify assisting staff");
+    }
+    const session = await this.mustGetSession(sessionId);
+    if (!session.assistingEmployeeIds) {
+      session.assistingEmployeeIds = [];
+    }
+
+    const index = session.assistingEmployeeIds.indexOf(assistantEmployeeId);
+    if (index !== -1) {
+      session.assistingEmployeeIds.splice(index, 1);
+      await this.emit(
+        session,
+        "ASSISTANT_REMOVED",
+        "session",
+        session.id,
+        { assistantEmployeeId, removedBy: ctx.actorId },
+        ctx
+      );
+      await this.repo.save(session);
+    }
+
     return { session, projection: projectTableSession(session) };
   }
 

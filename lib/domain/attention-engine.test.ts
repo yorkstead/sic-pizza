@@ -18,6 +18,7 @@ function createMockSession(overrides: Partial<TableSession> = {}): TableSession 
     openedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(), // 10m ago
     openedByEmployeeId: "emp_1",
     assignedServerId: "emp_1",
+    assistingEmployeeIds: [],
     diners: [
       {
         id: "d1",

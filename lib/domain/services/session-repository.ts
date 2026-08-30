@@ -5,6 +5,7 @@ export interface TableSessionRepository {
   findById(sessionId: string): Promise<TableSession | null>;
   findByTableId(tableId: string): Promise<TableSession | null>;
   listActive(locationId: string): Promise<TableSession[]>;
+  listAll(): Promise<TableSession[]>;
   save(session: TableSession): Promise<void>;
   appendEvent(event: DomainEvent): Promise<void>;
   getEvents(sessionId: string): Promise<DomainEvent[]>;
@@ -36,6 +37,10 @@ export class InMemoryTableSessionRepository implements TableSessionRepository {
       }
     }
     return result;
+  }
+
+  async listAll(): Promise<TableSession[]> {
+    return Array.from(this.sessions.values()).map((s) => JSON.parse(JSON.stringify(s)));
   }
 
   async save(session: TableSession): Promise<void> {

@@ -10,7 +10,8 @@ import {
   Store,
   Lock,
   Bell,
-  Sparkles
+  Sparkles,
+  ArrowRightLeft
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import { TableSessionView } from "./server/table-session-view";
 import { AttentionQueue } from "./server/attention-queue";
 import { DoThisNext } from "./server/do-this-next";
 import { MultiStationKDS } from "./kitchen/multi-station-kds";
+import { ShiftHandoffDialog } from "./server/shift-handoff-dialog";
 
 const RESTAURANT_ID = "sic_pizza_org";
 const LOCATION_ID = "loc_downtown";
@@ -63,6 +65,7 @@ export function PosDemo() {
   const [selectedTableId, setSelectedTableId] = useState<string | null>("tbl_11");
   const [attentionConfig, setAttentionConfig] = useState<AttentionConfig>(DEFAULT_ATTENTION_CONFIG);
   const [dismissedItemIds, setDismissedItemIds] = useState<Set<string>>(new Set());
+  const [isShiftHandoffOpen, setIsShiftHandoffOpen] = useState(false);
 
   // Repository & Domain Service instances
   const repo = useMemo(() => new InMemoryTableSessionRepository(), []);
@@ -516,6 +519,15 @@ export function PosDemo() {
           >
             <History className="size-4" />
             Audit Events
+          </Button>
+
+          <Button
+            variant="secondary"
+            className="w-full justify-start border border-primary/40 bg-primary/10 text-primary font-bold hover:bg-primary/20"
+            onClick={() => setIsShiftHandoffOpen(true)}
+          >
+            <ArrowRightLeft className="size-4" />
+            Shift / Section Handoff
           </Button>
         </nav>
 
@@ -1125,6 +1137,29 @@ export function PosDemo() {
           Audit
         </button>
       </nav>
+
+      {/* Instant Shift & Section Handoff Modal */}
+      <ShiftHandoffDialog
+        isOpen={isShiftHandoffOpen}
+        onClose={() => setIsShiftHandoffOpen(false)}
+        activeServerId={SERVER_ID}
+        activeServerName={SERVER_NAME}
+        allSessions={sessions}
+        availableEmployees={[
+          { id: "emp_jordan", name: "Jordan", role: "Server" },
+          { id: "emp_morgan", name: "Morgan", role: "Server" },
+          { id: "emp_taylor", name: "Taylor", role: "Server" },
+          { id: "emp_alex", name: "Alex", role: "Bartender" },
+          { id: "emp_sam_mgr", name: "Sam", role: "Floor Manager" }
+        ]}
+        onTransferTables={async (sessionIds, toEmployeeId, reason) => {
+          await service.transferMultipleTables(sessionIds, toEmployeeId, reason, {
+            actorType: "employee",
+            actorId: SERVER_ID
+          });
+          triggerUpdate();
+        }}
+      />
     </div>
   );
 }
