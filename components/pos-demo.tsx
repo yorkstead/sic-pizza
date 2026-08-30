@@ -12,7 +12,8 @@ import {
   Bell,
   Sparkles,
   ArrowRightLeft,
-  ShieldAlert
+  ShieldAlert,
+  TrendingUp
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ import { DoThisNext } from "./server/do-this-next";
 import { MultiStationKDS } from "./kitchen/multi-station-kds";
 import { ShiftHandoffDialog } from "./server/shift-handoff-dialog";
 import { ManagerCommandCenter } from "./manager/manager-command-center";
+import { ServiceAnalyticsView } from "./analytics/service-analytics-view";
 
 const RESTAURANT_ID = "sic_pizza_org";
 const LOCATION_ID = "loc_downtown";
@@ -63,7 +65,7 @@ export function PosDemo() {
   const [authenticated, setAuthenticated] = useState(false);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
-  const [view, setView] = useState<"floor" | "dothisnext" | "queue" | "kds" | "manager" | "join" | "history">("floor");
+  const [view, setView] = useState<"floor" | "dothisnext" | "queue" | "kds" | "manager" | "analytics" | "join" | "history">("floor");
   const [selectedTableId, setSelectedTableId] = useState<string | null>("tbl_11");
   const [attentionConfig, setAttentionConfig] = useState<AttentionConfig>(DEFAULT_ATTENTION_CONFIG);
   const [dismissedItemIds, setDismissedItemIds] = useState<Set<string>>(new Set());
@@ -521,6 +523,15 @@ export function PosDemo() {
           >
             <ShieldAlert className="size-4 text-amber-400" />
             Manager Hub
+          </Button>
+
+          <Button
+            variant={view === "analytics" ? "secondary" : "ghost"}
+            className="w-full justify-start"
+            onClick={() => setView("analytics")}
+          >
+            <TrendingUp className="size-4 text-cyan-400" />
+            Service Analytics
           </Button>
 
           <Button
@@ -1055,6 +1066,11 @@ export function PosDemo() {
                 triggerUpdate();
               }}
             />
+          )}
+
+          {/* Service Analytics That Explain Why */}
+          {view === "analytics" && (
+            <ServiceAnalyticsView sessions={sessions} />
           )}
 
           {view === "history" && (

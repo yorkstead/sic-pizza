@@ -51,7 +51,7 @@ export function ManagerCommandCenter({
 
   // Derive complete live operational state
   const ops: ManagerOperationsOverview = useMemo(() => {
-    return deriveManagerOperationsOverview(sessions, undefined, Array.from(unavailableItems));
+    return deriveManagerOperationsOverview(sessions, Array.from(unavailableItems));
   }, [sessions, unavailableItems]);
 
   const showNotification = (msg: string) => {

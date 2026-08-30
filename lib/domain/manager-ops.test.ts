@@ -192,7 +192,7 @@ describe("Restaurant Operating System: Manager Operations Command Center", () =>
       const emptySessions: TableSession[] = [];
       const unavailable = ["top_basil", "drink_negroni"];
 
-      const overview = deriveManagerOperationsOverview(emptySessions, undefined, unavailable);
+      const overview = deriveManagerOperationsOverview(emptySessions, unavailable);
       expect(overview.unavailableItemIds).toContain("top_basil");
       expect(overview.unavailableItemIds).toContain("drink_negroni");
     });

@@ -1,7 +1,6 @@
 import { money } from "@/lib/utils";
 import type { TableSession, DiningStage } from "./session";
 import { deriveDiningStage, deriveElapsedMinutes, deriveFinancials } from "./session";
-import { DEFAULT_ATTENTION_CONFIG, type AttentionConfig } from "./attention";
 
 export type ManagerAlertSeverity = "critical" | "urgent" | "warning" | "info";
 
@@ -113,7 +112,6 @@ const SERVER_NAMES_MAP: Record<string, string> = {
  */
 export function deriveManagerOperationsOverview(
   sessions: TableSession[],
-  config: AttentionConfig = DEFAULT_ATTENTION_CONFIG,
   unavailableItemIds: string[] = ["top_basil"],
   now: Date = new Date()
 ): ManagerOperationsOverview {
