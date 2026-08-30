@@ -16,6 +16,7 @@ export * from "./models/handoff";
 export * from "./models/manager-ops";
 export * from "./models/service-analytics";
 export * from "./models/idempotency";
+export * from "./models/tenant";
 export * from "./services/session-repository";
 export * from "./services/session-service";
 export * from "./services/attention-service";

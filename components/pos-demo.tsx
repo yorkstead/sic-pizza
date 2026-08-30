@@ -28,7 +28,10 @@ import {
   DEFAULT_ATTENTION_CONFIG,
   type AttentionConfig,
   type SelectedModifier,
-  ClientMutationQueue
+  ClientMutationQueue,
+  AVAILABLE_TENANTS,
+  SIC_PIZZA_TENANT,
+  type RestaurantTenant
 } from "@/lib/domain";
 import { FloorView } from "./server/floor-view";
 import { TableSessionView } from "./server/table-session-view";
@@ -64,6 +67,11 @@ const STATIC_TABLES: TableMeta[] = [
 ];
 
 export function PosDemo() {
+  const [selectedTenantId, setSelectedTenantId] = useState<string>("sic_pizza_tenant");
+  const currentTenant: RestaurantTenant = useMemo(
+    () => AVAILABLE_TENANTS.find((t) => t.tenantId === selectedTenantId) || SIC_PIZZA_TENANT,
+    [selectedTenantId]
+  );
   const [authenticated, setAuthenticated] = useState(false);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
@@ -402,17 +410,39 @@ export function PosDemo() {
         <Card className="w-full max-w-sm overflow-hidden border border-border shadow-2xl">
           <div className="h-1.5 bg-primary" />
           <CardHeader className="text-center pt-8 pb-4">
-            <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground font-black text-xl rotate-[-4deg] shadow-md">
-              SIC
+            <div className={`mx-auto flex size-12 items-center justify-center rounded-2xl ${currentTenant.theme.badgeClass} font-black text-xl rotate-[-4deg] shadow-md`}>
+              {currentTenant.theme.logoShort}
             </div>
             <h1 className="mt-4 text-2xl font-black tracking-tight text-foreground">
-              Server Terminal
+              {currentTenant.name}
             </h1>
             <p className="text-xs text-muted-foreground">
+              {currentTenant.theme.tagline}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
               Enter 4-digit dev PIN: <strong className="font-mono text-foreground">0420</strong>
             </p>
           </CardHeader>
           <CardContent className="space-y-4 pb-8">
+            {/* Tenant Demonstration Selector */}
+            <div className="space-y-1">
+              <label htmlFor="tenant-select" className="text-[11px] font-bold text-muted-foreground block">
+                Platform Demo Tenant:
+              </label>
+              <select
+                id="tenant-select"
+                value={selectedTenantId}
+                onChange={(e) => setSelectedTenantId(e.target.value)}
+                className="h-9 w-full rounded-lg border bg-card px-2.5 text-xs font-bold text-foreground focus:outline-hidden"
+              >
+                {AVAILABLE_TENANTS.map((t) => (
+                  <option key={t.tenantId} value={t.tenantId}>
+                    {t.name} ({t.cuisine.split(",")[0]})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div>
               <label htmlFor="server-pin" className="sr-only">
                 Employee PIN
@@ -447,13 +477,13 @@ export function PosDemo() {
       {/* Desktop Sidebar */}
       <aside className="hidden border-r p-5 lg:flex lg:flex-col bg-card/40">
         <div className="flex items-center gap-2.5">
-          <div className="grid size-9 rotate-[-4deg] place-items-center rounded-lg bg-primary font-black text-primary-foreground">
-            SIC
+          <div className={`grid size-9 rotate-[-4deg] place-items-center rounded-lg ${currentTenant.theme.badgeClass} font-black text-xs shadow-xs`}>
+            {currentTenant.theme.logoShort}
           </div>
           <div>
-            <strong className="block text-sm font-black leading-4">OPERATING SYSTEM</strong>
+            <strong className="block text-sm font-black leading-4">{currentTenant.theme.brandName}</strong>
             <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
-              Demo: SIC Pizza
+              Restaurant OS
             </span>
           </div>
         </div>
@@ -575,14 +605,28 @@ export function PosDemo() {
         {/* Sticky Mobile/Desktop Top Header */}
         <header className="sticky top-0 z-20 flex items-center justify-between border-b bg-background/95 px-4 py-3 backdrop-blur md:px-7">
           <div className="flex items-center gap-2 lg:hidden">
-            <div className="grid size-8 rotate-[-4deg] place-items-center rounded-lg bg-primary font-black text-xs text-primary-foreground">
-              SIC
+            <div className={`grid size-8 rotate-[-4deg] place-items-center rounded-lg ${currentTenant.theme.badgeClass} font-black text-xs`}>
+              {currentTenant.theme.logoShort}
             </div>
-            <span className="font-black text-sm">RESTAURANT OS</span>
+            <span className="font-black text-sm">{currentTenant.name}</span>
           </div>
 
-          <div className="hidden lg:flex items-center gap-2">
-            <Badge className="font-mono font-bold">Downtown Location</Badge>
+          <div className="hidden lg:flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs font-bold">
+              <span className="text-muted-foreground font-mono text-[11px]">Tenant:</span>
+              <select
+                value={selectedTenantId}
+                onChange={(e) => setSelectedTenantId(e.target.value)}
+                className="h-8 rounded-lg border bg-card px-2.5 text-xs font-bold text-foreground focus:outline-hidden"
+              >
+                {AVAILABLE_TENANTS.map((t) => (
+                  <option key={t.tenantId} value={t.tenantId}>
+                    {t.name} ({t.cuisine.split(",")[0]})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Badge className="font-mono font-bold">{currentTenant.locationId}</Badge>
           </div>
 
           <div className="flex items-center gap-2">

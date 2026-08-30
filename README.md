@@ -40,17 +40,35 @@ The system directly eliminates major hospitality friction points:
 
 ---
 
-## Architectural Separation
+## Architectural Separation: Platform Core vs. Restaurant Tenants
 
-The codebase enforces strict separation across three tiers:
+The codebase strictly decouples general-purpose hospitality domain logic from specific restaurant cuisines, menus, or themes:
 
-1. **Platform Core (`lib/domain/core/`)**:
-   - Universal restaurant primitives: table session lifecycle, order/item aggregates, coursing, operational task board, multi-station state machine, integer-cent calculations, and append-only domain event envelopes.
-   - Completely agnostic of pizza, food types, or sarcasm.
-2. **Restaurant Configuration (`lib/domain/restaurant/`)**:
-   - Schema and definitions for physical floor layouts, kitchen stations (e.g. Pizza Oven, Bar, Cold Prep, Expo), coursing pacing, tax rates, and role permissions.
-3. **SIC Pizza Demo Content & Branding (`lib/demo/sic-pizza/`)**:
-   - Demonstration implementation featuring pizza customizers, integer-cent topping engines, dark-first UI tokens, and optional voice modes (`dry`, `feral`, `neutral`).
+1. **Platform Core (`lib/domain/`)**:
+   - **Universal Domain Engine**: Table session aggregate lifecycle, order/item aggregates, deterministic split reconciliation with integer-cent remainder tracking, append-only event stream, offline-resilient mutation queue, and service analytics.
+   - **Zero Cuisine Dependencies**: Completely agnostic of pizza, dough types, or specific station topologies.
+2. **Tenant Configuration Schema (`lib/domain/models/tenant.ts`)**:
+   - Declarative schemas for restaurant branding, physical floor plans, kitchen stations, menus, modifier compatibility rules, role assignments, and attention thresholds.
+3. **Demonstration Tenants**:
+   - **SIC Pizza (`SIC_PIZZA_TENANT`)**: Flagship artisan wood-fired pizzeria featuring half-topping modifier rules, 7-station kitchen routing (`PIZZA`, `GRILL`, `FRY`, `SALAD`, `BAR`, `DESSERT`, `EXPO`), and full tableside ordering.
+   - **Sakura Izakaya (`SAKURA_IZAKAYA_TENANT`)**: Japanese gastropub showcasing robata skewers, sashimi, sake highballs, and distinct stations (`SUSHI_BAR`, `YAKITORI_GRILL`, `HOT_KITCHEN`, `SAKE_BAR`, `EXPO`) to prove total platform neutrality.
+
+---
+
+## Key Platform Capabilities
+
+- **1. Live Table Session Experience**: Mobile-first server handheld view answering *"Which table needs me right now?"*
+- **2. Pre-Split Diner Item Ownership**: Every item is allocated to single, multiple, or all diners with deterministic integer-cent math.
+- **3. Universal Attention & Request Queue**: Role-routed service requests (Runners, Bartenders, Servers, Managers) with age and escalation tracking.
+- **4. Rules-Based Attention Engine**: Deterministic operational suggestions ("Do This Next") with 0 LLM dependencies.
+- **5. Semantic Modifier Engine**: Invalid-state prevention preventing incompatible customizations before kitchen submission.
+- **6. Multi-Station Kitchen Projections (KDS)**: 1 order projected to multiple production stations with synchronized Expo readiness.
+- **7. Course Pacing & Coordination**: Hold, fire now, and pacing recommendations across drinks, starters, and mains.
+- **8. Guest Web Session via Rotating QR**: Zero-install mobile web ordering with server proposal approval gates.
+- **9. Instant Table Handoffs**: State-derived shift transfers with zero verbal brain dumps.
+- **10. Manager Operations Command Center**: High-density operational monitoring answering *"What is going wrong right now?"*
+- **11. Service Analytics That Explain Why**: Event-derived telemetry tracking greet times, cook speeds, runner lag, and table turn times.
+- **12. Offline & Idempotent Mutation Foundation**: Zero duplicate kitchen firing invariant on flaky restaurant Wi-Fi.
 
 ---
 
