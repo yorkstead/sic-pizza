@@ -11,6 +11,7 @@ export * from "./models/session";
 export * from "./models/attention";
 export * from "./models/modifiers";
 export * from "./models/pacing";
+export * from "./models/qr";
 export * from "./services/session-repository";
 export * from "./services/session-service";
 export * from "./services/attention-service";

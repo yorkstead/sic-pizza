@@ -1,110 +1,165 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { Bell, Check, Pizza, ArrowLeft } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ArrowLeft, AlertCircle } from "lucide-react";
+import { GuestSessionApp } from "./guest/guest-session-app";
+import {
+  InMemoryTableSessionRepository,
+  TableSessionService,
+  projectTableSession,
+  validateRotatingQRToken,
+  type TableSession,
+  type TableSessionProjection
+} from "@/lib/domain";
 
 export function GuestSession({ code }: { code: string }) {
-  const [proposed, setProposed] = useState(false);
-  const [help, setHelp] = useState(false);
+  const repo = useMemo(() => new InMemoryTableSessionRepository(), []);
+  const service = useMemo(() => new TableSessionService(repo), [repo]);
+
+  const [session, setSession] = useState<TableSession | null>(null);
+  const [projection, setProjection] = useState<TableSessionProjection | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function initGuestSession() {
+      try {
+        // If code is a base64url rotating token, validate it safely
+        if (code.length > 20 && !code.startsWith("SIC-")) {
+          const validation = validateRotatingQRToken(code, "sess_11");
+          if (!validation.valid) {
+            setTokenError(validation.reason || "Invalid QR code credentials");
+            setLoading(false);
+            return;
+          }
+        }
+
+        // Initialize / seed demo session for Table 11
+        const { session: s11 } = await service.openTableSession({
+          id: "sess_11",
+          restaurantId: "sic_pizza_org",
+          locationId: "loc_downtown",
+          tableId: "tbl_11",
+          tableLabel: "Table 11",
+          diningAreaId: "area_main",
+          openedByEmployeeId: "emp_jordan",
+          assignedServerId: "emp_jordan",
+          initialDiners: ["Alex", "Sam"]
+        });
+
+        // Seed some items
+        await service.addItem("sess_11", {
+          menuItemId: "pizza_pep",
+          name: "Large Pepperoni Hot Honey Pizza",
+          course: "mains",
+          stationId: "pizza",
+          basePriceCents: 2400,
+          selectedModifiers: [
+            {
+              modifierOptionId: "mod_hot_honey",
+              name: "Hot Honey Drizzle",
+              level: "NORMAL",
+              placement: "WHOLE",
+              priceCents: 200
+            }
+          ],
+          splitMode: "whole_table",
+          assignedDinerIds: s11.diners.map((d) => d.id)
+        });
+
+        // Seed a proposed item from guest
+        await service.proposeItem("sess_11", {
+          menuItemId: "starter_garlic_knots",
+          name: "Garlic Parmesan Knots (6pc)",
+          course: "starters",
+          stationId: "pizza",
+          basePriceCents: 800,
+          quantity: 1,
+          selectedModifiers: [],
+          dinerId: s11.diners[0].id,
+          splitMode: "single",
+          assignedDinerIds: [s11.diners[0].id]
+        });
+
+        const currentSession = (await repo.findById("sess_11"))!;
+        setSession(currentSession);
+        setProjection(projectTableSession(currentSession));
+      } catch (err) {
+        console.error("Failed to init guest session:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    initGuestSession();
+  }, [code, repo, service]);
+
+  if (loading) {
+    return (
+      <main className="mx-auto min-h-screen max-w-lg p-6 flex flex-col items-center justify-center text-center space-y-3">
+        <div className="grid size-12 animate-spin place-items-center rounded-full border-4 border-primary border-t-transparent" />
+        <p className="text-xs font-mono font-bold text-muted-foreground uppercase tracking-widest">
+          Connecting to Table 11...
+        </p>
+      </main>
+    );
+  }
+
+  if (tokenError) {
+    return (
+      <main className="mx-auto min-h-screen max-w-lg p-6 flex flex-col items-center justify-center text-center space-y-4">
+        <div className="size-12 rounded-2xl bg-rose-500/20 text-rose-400 grid place-items-center">
+          <AlertCircle className="size-6" />
+        </div>
+        <h1 className="text-xl font-black text-foreground">QR Code Expired</h1>
+        <p className="text-xs text-muted-foreground max-w-xs">{tokenError}</p>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground"
+        >
+          <ArrowLeft className="size-3.5" />
+          Back to Server Floor
+        </Link>
+      </main>
+    );
+  }
+
+  if (!session || !projection) {
+    return null;
+  }
 
   return (
-    <main className="mx-auto min-h-screen max-w-lg p-4 pb-12">
-      <header className="mb-6 flex items-center justify-between border-b pb-3">
-        <div className="flex items-center gap-2">
-          <div className="grid size-8 rotate-[-4deg] place-items-center rounded-lg bg-primary font-black text-xs text-primary-foreground">
-            SIC
-          </div>
-          <div>
-            <strong className="block text-sm font-black leading-4">SIC PIZZA</strong>
-            <p className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
-              Guest Session · Table 11
-            </p>
-          </div>
-        </div>
-        <Badge className="font-mono">{code}</Badge>
-      </header>
-
-      <div>
-        <Badge>Connected to Table Session</Badge>
-        <h1 className="mt-2 text-3xl font-black tracking-tight text-foreground">
-          Table 11 Menu & Ordering
-        </h1>
-        <p className="mt-1.5 text-xs text-muted-foreground leading-5">
-          Propose items to the table order, track kitchen preparation, and call staff directly from your phone.
-        </p>
-      </div>
-
-      {/* Featured Pizza Proposal */}
-      <Card className="mt-6">
-        <CardHeader className="pb-3">
-          <div className="flex items-start gap-3">
-            <Pizza className="size-6 text-primary shrink-0 mt-0.5" />
-            <div>
-              <h2 className="font-black text-foreground text-base">Small Hot Honey Pineapple Pizza</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Fresh dough, crushed tomato, mozzarella, pineapple, extra cheese · $17.50
-              </p>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {proposed ? (
-            <div className="flex items-center gap-2 rounded-xl bg-primary/10 p-3.5 text-xs font-bold text-primary">
-              <Check className="size-4 shrink-0" />
-              Proposed to server · waiting for tableside approval
-            </div>
-          ) : (
-            <Button size="lg" className="w-full text-sm" onClick={() => setProposed(true)}>
-              Propose This Pizza to Table
-            </Button>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Live Table Progress Card */}
-      <Card className="mt-4">
-        <CardContent className="pt-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <strong className="block text-sm text-foreground">Kitchen Status</strong>
-              <p className="text-xs text-muted-foreground">
-                In Preparation · 2 items queued
-              </p>
-            </div>
-            <Badge className="border-amber-500/40 bg-amber-500/20 text-amber-300">
-              In Prep
-            </Badge>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Assistance Button */}
-      <Button
-        variant="secondary"
-        size="lg"
-        className="mt-4 w-full text-sm"
-        onClick={() => setHelp(true)}
-      >
-        <Bell className="size-4" />
-        {help ? "Server Notified · Staff on the way" : "Request Server Assistance"}
-      </Button>
-
-      <div className="mt-6 rounded-xl border bg-secondary/30 p-3 text-[11px] text-muted-foreground leading-5">
-        <strong className="block text-foreground font-semibold">Dietary & Allergen Notice:</strong>
-        All allergen information uses neutral, factual standards. Please inform your server of any severe allergies before ordering.
-      </div>
-
-      <Link
-        href="/"
-        className="mt-8 flex items-center justify-center gap-1 text-xs font-bold text-primary underline"
-      >
-        <ArrowLeft className="size-3.5" />
-        Return to Server Terminal
-      </Link>
-    </main>
+    <GuestSessionApp
+      initialSession={session}
+      initialProjection={projection}
+      onProposeItem={async (itemData) => {
+        const res = await service.proposeItem(session.id, itemData, {
+          actorType: "guest",
+          actorId: itemData.dinerId
+        });
+        setSession({ ...res.session });
+        setProjection({ ...res.projection });
+      }}
+      onCreateRequest={async (category, description, dinerId) => {
+        const res = await service.createGuestRequest(session.id, category, description, dinerId, {
+          actorType: "guest",
+          actorId: dinerId
+        });
+        setSession({ ...res.session });
+        setProjection({ ...res.projection });
+      }}
+      onProcessDinerPayment={async (dinerId, tipPercent) => {
+        const bill = projection.dinerBills.find((b) => b.dinerId === dinerId);
+        const amountCents = (bill?.subtotalCents || 0) + (bill?.taxCents || 0);
+        const tipCents = Math.round(((bill?.subtotalCents || 0) * tipPercent) / 100);
+        const res = await service.processDinerPayment(session.id, dinerId, amountCents, tipCents, "mock_card_token", {
+          actorType: "guest",
+          actorId: dinerId
+        });
+        setSession({ ...res.session });
+        setProjection({ ...res.projection });
+      }}
+    />
   );
 }

@@ -198,6 +198,9 @@ export class TableSessionService {
     reason: string,
     ctx: CommandContext
   ): Promise<{ session: TableSession; projection: TableSessionProjection }> {
+    if (ctx.actorType === "guest") {
+      throw new Error("Permission denied: Guests cannot transfer tables");
+    }
     const session = await this.mustGetSession(sessionId);
     const prevServer = session.assignedServerId;
     session.assignedServerId = toEmployeeId;
@@ -291,6 +294,9 @@ export class TableSessionService {
     itemId: string,
     ctx: CommandContext = { actorType: "employee" }
   ): Promise<{ session: TableSession; item: OrderItem; projection: TableSessionProjection }> {
+    if (ctx.actorType === "guest") {
+      throw new Error("Permission denied: Guests cannot approve proposed items");
+    }
     const session = await this.mustGetSession(sessionId);
     const item = session.items.find((i) => i.id === itemId);
     if (!item) throw new Error(`Item ${itemId} not found`);
@@ -531,6 +537,9 @@ export class TableSessionService {
     reason: string,
     ctx: CommandContext = { actorType: "employee" }
   ): Promise<{ session: TableSession; item: OrderItem; projection: TableSessionProjection }> {
+    if (ctx.actorType === "guest") {
+      throw new Error("Permission denied: Guests cannot void finalized items");
+    }
     const session = await this.mustGetSession(sessionId);
     const item = session.items.find((i) => i.id === itemId);
     if (!item) throw new Error(`Item ${itemId} not found`);
@@ -567,6 +576,9 @@ export class TableSessionService {
     course: Course,
     ctx: CommandContext = { actorType: "employee" }
   ): Promise<{ session: TableSession; tickets: KitchenTicket[]; projection: TableSessionProjection }> {
+    if (ctx.actorType === "guest") {
+      throw new Error("Permission denied: Guests cannot fire kitchen courses");
+    }
     const session = await this.mustGetSession(sessionId);
     const itemsToFire = session.items.filter(
       (i) => i.course === course && (i.status === "confirmed" || i.status === "held")
@@ -1356,6 +1368,7 @@ export class TableSessionService {
       id: paymentId,
       checkId: check.id,
       sessionId: session.id,
+      dinerId,
       amountCents,
       tipCents,
       method: "card",
@@ -1401,6 +1414,9 @@ export class TableSessionService {
     sessionId: string,
     ctx: CommandContext = { actorType: "employee" }
   ): Promise<{ session: TableSession; projection: TableSessionProjection }> {
+    if (ctx.actorType === "guest") {
+      throw new Error("Permission denied: Guests cannot close table sessions");
+    }
     const session = await this.mustGetSession(sessionId);
     if (session.closedAt) {
       throw new Error(`Session ${sessionId} is already closed`);

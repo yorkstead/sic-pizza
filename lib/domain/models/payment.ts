@@ -45,6 +45,7 @@ export const paymentSchema = z.object({
   id: z.string(),
   checkId: z.string(),
   sessionId: z.string(),
+  dinerId: z.string().optional(),
   amountCents: z.number().int().positive(),
   tipCents: z.number().int().nonnegative().default(0),
   method: paymentMethodSchema.default("card"),
