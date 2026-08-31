@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { money } from "@/lib/utils";
 import { AddItemDialog } from "@/components/server/add-item-dialog";
 import { StageBadge } from "@/components/server/stage-badge";
@@ -190,11 +191,13 @@ export function GuestSessionApp({
           </div>
         </div>
 
-        {/* Diner Selector Pill */}
-        <div className="flex items-center gap-1">
+        {/* Header Right Actions */}
+        <div className="flex items-center gap-1.5">
+          <ThemeToggle variant="compact" size="sm" />
           <select
             value={selectedDinerId}
             onChange={(e) => setSelectedDinerId(e.target.value)}
+            aria-label="Select active diner"
             className="h-8 rounded-lg border bg-secondary/60 px-2 text-xs font-bold text-foreground focus:outline-hidden"
           >
             {session.diners.map((d) => (

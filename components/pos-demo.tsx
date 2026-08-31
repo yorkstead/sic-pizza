@@ -19,6 +19,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import {
   InMemoryTableSessionRepository,
   TableSessionService,
@@ -407,7 +408,10 @@ export function PosDemo() {
 
   if (!authenticated) {
     return (
-      <main className="grid min-h-screen place-items-center p-4 bg-background">
+      <main className="relative grid min-h-screen place-items-center p-4 bg-background">
+        <div className="absolute top-4 right-4">
+          <ThemeToggle size="sm" />
+        </div>
         <Card className="w-full max-w-sm overflow-hidden border border-border shadow-2xl">
           <div className="h-1.5 bg-primary" />
           <CardHeader className="text-center pt-8 pb-4">
@@ -643,6 +647,7 @@ export function PosDemo() {
           </div>
 
           <div className="flex items-center gap-2">
+            <ThemeToggle size="sm" />
             <Button
               variant="ghost"
               size="icon"
