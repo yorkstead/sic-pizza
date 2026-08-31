@@ -177,7 +177,7 @@ export function GuestSessionApp({
       <header className="flex items-center justify-between rounded-2xl border bg-card p-3.5 shadow-sm">
         <div className="flex items-center gap-2.5">
           <div className="grid size-9 rotate-[-4deg] place-items-center rounded-xl bg-primary font-black text-xs text-primary-foreground shadow-xs">
-            SIC
+            <Pizza className="size-5 text-primary-foreground" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
