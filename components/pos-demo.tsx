@@ -13,7 +13,8 @@ import {
   Sparkles,
   ArrowRightLeft,
   ShieldAlert,
-  TrendingUp
+  TrendingUp,
+  Pizza
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -411,7 +412,11 @@ export function PosDemo() {
           <div className="h-1.5 bg-primary" />
           <CardHeader className="text-center pt-8 pb-4">
             <div className={`mx-auto flex size-12 items-center justify-center rounded-2xl ${currentTenant.theme.badgeClass} font-black text-xl rotate-[-4deg] shadow-md`}>
-              {currentTenant.theme.logoShort}
+              {currentTenant.tenantId === "sic_pizza_tenant" ? (
+                <Pizza className="size-6 text-primary-foreground" />
+              ) : (
+                currentTenant.theme.logoShort
+              )}
             </div>
             <h1 className="mt-4 text-2xl font-black tracking-tight text-foreground">
               {currentTenant.name}
@@ -478,7 +483,11 @@ export function PosDemo() {
       <aside className="hidden border-r p-5 lg:flex lg:flex-col bg-card/40">
         <div className="flex items-center gap-2.5">
           <div className={`grid size-9 rotate-[-4deg] place-items-center rounded-lg ${currentTenant.theme.badgeClass} font-black text-xs shadow-xs`}>
-            {currentTenant.theme.logoShort}
+            {currentTenant.tenantId === "sic_pizza_tenant" ? (
+              <Pizza className="size-5 text-primary-foreground" />
+            ) : (
+              currentTenant.theme.logoShort
+            )}
           </div>
           <div>
             <strong className="block text-sm font-black leading-4">{currentTenant.theme.brandName}</strong>
@@ -606,7 +615,11 @@ export function PosDemo() {
         <header className="sticky top-0 z-20 flex items-center justify-between border-b bg-background/95 px-4 py-3 backdrop-blur md:px-7">
           <div className="flex items-center gap-2 lg:hidden">
             <div className={`grid size-8 rotate-[-4deg] place-items-center rounded-lg ${currentTenant.theme.badgeClass} font-black text-xs`}>
-              {currentTenant.theme.logoShort}
+              {currentTenant.tenantId === "sic_pizza_tenant" ? (
+                <Pizza className="size-4 text-primary-foreground" />
+              ) : (
+                currentTenant.theme.logoShort
+              )}
             </div>
             <span className="font-black text-sm">{currentTenant.name}</span>
           </div>
