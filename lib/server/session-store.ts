@@ -8,22 +8,36 @@ import { PostgresTableSessionRepository } from "../domain/server";
 // Server-side persistent session repository singleton
 let globalRepo: TableSessionRepository | undefined;
 
+interface SessionRepositoryRuntimeConfig {
+  databaseUrl?: string;
+  demoMode: boolean;
+}
+
+export function createServerSessionRepository(
+  config: SessionRepositoryRuntimeConfig
+): TableSessionRepository {
+  if (config.databaseUrl) {
+    return new PostgresTableSessionRepository({
+      connectionString: config.databaseUrl
+    });
+  }
+
+  if (config.demoMode) {
+    return new InMemoryTableSessionRepository();
+  }
+
+  throw new Error(
+    "Persistent session storage is not configured. Set DATABASE_URL, or explicitly enable SIC_DEMO_MODE=true for an isolated synthetic demo."
+  );
+}
+
 export function getServerSessionRepository(): TableSessionRepository {
   if (globalRepo) return globalRepo;
 
-  if (process.env.DATABASE_URL) {
-    try {
-      globalRepo = new PostgresTableSessionRepository({
-        connectionString: process.env.DATABASE_URL
-      });
-      return globalRepo;
-    } catch {
-      // Fallback to in-memory if DB connection cannot be established
-    }
-  }
-
-  // Persistent in-memory instance for dev and tests
-  globalRepo = new InMemoryTableSessionRepository();
+  globalRepo = createServerSessionRepository({
+    databaseUrl: process.env.DATABASE_URL,
+    demoMode: process.env.SIC_DEMO_MODE === "true" || process.env.NODE_ENV === "test"
+  });
   return globalRepo;
 }
 

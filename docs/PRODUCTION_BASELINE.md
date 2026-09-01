@@ -2,7 +2,7 @@
 
 **Document Version:** 1.0.0  
 **Status:** Approved Architectural Baseline (Milestone 0)  
-**Target Next Milestone:** Prompt 1 — Build transactional PostgreSQL persistence  
+**Target Next Milestone:** Implement ADR-0001 scoped command boundary and real PostgreSQL acceptance suite
 
 ---
 
@@ -171,3 +171,11 @@ During the Milestone 0 baseline audit, tracked configuration files were inspecte
 - [x] **Persistence Decision Record defined:** Clear contract for authoritative transactional state, audit events, durable outbox, ID mapping, tenant boundaries, and concurrency control.
 - [x] **Safe configuration hygiene verified:** Tracked connection strings and examples replaced with placeholders; zero secrets displayed in report.
 - [x] **Tests & Build verified:** 97 domain tests passing, clean TypeScript typecheck (`tsc --noEmit`), and clean linting (`eslint .`).
+
+---
+
+## 7. 2026-09-01 verification correction
+
+Later implementation added a PostgreSQL adapter and server routes, but review found that authenticated tenant context is not carried through the `TableSessionService` command boundary. The adapter's legacy calls manufacture a default location, and several queries accept `NULL` ownership. The test named as a PostgreSQL contract primarily exercises the in-memory repository; its live harness passes without database execution when `TEST_DATABASE_URL` is missing.
+
+Accordingly, transactional PostgreSQL persistence, restart survival, database-enforced tenant isolation, and cross-connection concurrency remain **unverified**. ADR-0001 defines the blocking correction. Runtime repository selection now fails closed unless `DATABASE_URL` is configured or isolated synthetic demo mode is explicitly enabled with `SIC_DEMO_MODE=true`.
