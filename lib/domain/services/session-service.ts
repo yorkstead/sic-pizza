@@ -17,8 +17,13 @@ export interface CommandContext {
   idempotencyKey?: string;
 }
 
+export type DomainEventListener = (event: DomainEvent, session: TableSession) => void | Promise<void>;
+
 export class TableSessionService {
-  constructor(private repo: TableSessionRepository) {}
+  constructor(
+    private repo: TableSessionRepository,
+    private eventListener?: DomainEventListener
+  ) {}
 
   private async emit(
     session: TableSession,
@@ -43,8 +48,15 @@ export class TableSessionService {
 
     session.events.push(event);
     await this.repo.appendEvent(event);
+    session.version = (session.version || 0) + 1;
+
+    if (this.eventListener) {
+      await this.eventListener(event, session);
+    }
+
     return event;
   }
+
 
   private checkIdempotency<T>(session: TableSession, key?: string): T | null {
     if (!key) return null;

@@ -53,6 +53,8 @@ import {
   DEMO_STAFF_DIRECTORY,
   type StaffSessionPayload
 } from "@/lib/server/auth/staff-auth";
+import { useTableRealtime } from "@/lib/client/use-table-realtime";
+
 
 const SERVER_ID = "emp_jordan";
 const SERVER_NAME = "Jordan · Server";
@@ -83,7 +85,9 @@ export function PosDemo() {
   );
   const [authenticated, setAuthenticated] = useState(false);
   const [staffSession, setStaffSession] = useState<StaffSessionPayload | null>(null);
+  const [staffToken, setStaffToken] = useState<string | null>(null);
   const [pin, setPin] = useState("");
+
   const [error, setError] = useState("");
   const [view, setView] = useState<"floor" | "dothisnext" | "queue" | "kds" | "manager" | "analytics" | "join" | "history">("floor");
   const [selectedTableId, setSelectedTableId] = useState<string | null>("tbl_11");
@@ -418,6 +422,19 @@ export function PosDemo() {
   const currentSession = selectedTableId ? activeSessionsByTable.get(selectedTableId) : undefined;
   const currentProjection = currentSession ? projectTableSession(currentSession) : undefined;
 
+  // Realtime Floor Synchronization
+  useTableRealtime({
+    locationId: "loc_downtown",
+    token: staffToken,
+    enabled: Boolean(authenticated && staffToken),
+    onEvent: () => {
+      triggerUpdate();
+    },
+    onSyncRequired: () => {
+      triggerUpdate();
+    }
+  });
+
   async function login(pinToAuth?: string) {
     const inputPin = pinToAuth || pin;
     setError("");
@@ -427,8 +444,10 @@ export function PosDemo() {
       return;
     }
     setStaffSession(res.payload);
+    setStaffToken(res.token || null);
     setAuthenticated(true);
   }
+
 
   if (!authenticated) {
     return (

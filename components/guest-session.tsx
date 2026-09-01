@@ -11,6 +11,7 @@ import {
   type TableSession,
   type TableSessionProjection
 } from "@/lib/domain";
+import { useTableRealtime } from "@/lib/client/use-table-realtime";
 
 export function GuestSession({ code }: { code: string }) {
   const [session, setSession] = useState<TableSession | null>(null);
@@ -37,6 +38,20 @@ export function GuestSession({ code }: { code: string }) {
       // Ignore background refresh errors
     }
   }, []);
+
+  // Realtime Delivery & Live State Synchronization
+  useTableRealtime({
+    sessionId: session?.id,
+    token: guestToken,
+    enabled: Boolean(session && guestToken),
+    onEvent: () => {
+      if (guestToken) fetchLiveSession(guestToken);
+    },
+    onSyncRequired: () => {
+      if (guestToken) fetchLiveSession(guestToken);
+    }
+  });
+
 
   useEffect(() => {
     async function initGuestSession() {

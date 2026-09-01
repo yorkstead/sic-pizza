@@ -27,10 +27,18 @@ export function getServerSessionRepository(): TableSessionRepository {
   return globalRepo;
 }
 
+import { getRealtimeEventBus } from "./realtime/event-bus";
+
 export function getServerSessionService(): TableSessionService {
-  return new TableSessionService(getServerSessionRepository());
+  return new TableSessionService(
+    getServerSessionRepository(),
+    (event, session) => {
+      getRealtimeEventBus().publish(session.id, event, session.version || 1);
+    }
+  );
 }
 
 export function resetServerSessionStore(repo?: TableSessionRepository): void {
   globalRepo = repo || new InMemoryTableSessionRepository();
 }
+
