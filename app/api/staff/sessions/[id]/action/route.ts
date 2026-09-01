@@ -36,7 +36,10 @@ export async function POST(
       return NextResponse.json({ error: auth.error || "Permission Denied" }, { status: 403 });
     }
 
-    const service = getServerSessionService();
+    const service = getServerSessionService({
+      organizationId: auth.session.organizationId,
+      locationId: auth.session.locationId
+    });
     const ctx = {
       actorType: "employee" as const,
       actorId: auth.session.employeeId,

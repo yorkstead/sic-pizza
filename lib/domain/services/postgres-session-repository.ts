@@ -69,7 +69,10 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
 
   private normalizeContext(ctxOrId: TenantContext | string, maybeId?: string): { ctx: TenantContext; id: string } {
     if (typeof ctxOrId === "string") {
-      return { ctx: { locationId: "default" }, id: ctxOrId };
+      throw new Error("PostgreSQL session access requires explicit TenantContext");
+    }
+    if (!ctxOrId.organizationId || !ctxOrId.locationId) {
+      throw new Error("PostgreSQL session access requires organizationId and locationId");
     }
     return { ctx: ctxOrId, id: maybeId || "" };
   }
@@ -78,6 +81,7 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
     const { ctx, id: rawSessionId } = this.normalizeContext(ctxOrSessionId, maybeSessionId);
     const sessionUuid = ensureUuid(rawSessionId);
     const locationUuid = ensureUuid(ctx.locationId);
+    const organizationUuid = ensureUuid(ctx.organizationId!);
 
     const client = await this.pool.connect();
     try {
@@ -85,8 +89,8 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
         `SELECT ts.*, t.label as table_label 
          FROM table_sessions ts 
          LEFT JOIN tables t ON t.id = ts.table_id 
-         WHERE ts.id = $1 AND (ts.location_id = $2 OR ts.location_id IS NULL)`,
-        [sessionUuid, locationUuid]
+         WHERE ts.id = $1 AND ts.organization_id = $2 AND ts.location_id = $3`,
+        [sessionUuid, organizationUuid, locationUuid]
       );
 
       if (sessionRes.rows.length === 0) return null;
@@ -102,6 +106,7 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
     const { ctx, id: rawTableId } = this.normalizeContext(ctxOrTableId, maybeTableId);
     const tableUuid = ensureUuid(rawTableId);
     const locationUuid = ensureUuid(ctx.locationId);
+    const organizationUuid = ensureUuid(ctx.organizationId!);
 
     const client = await this.pool.connect();
     try {
@@ -109,9 +114,9 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
         `SELECT ts.*, t.label as table_label 
          FROM table_sessions ts 
          LEFT JOIN tables t ON t.id = ts.table_id 
-         WHERE ts.table_id = $1 AND (ts.location_id = $2 OR ts.location_id IS NULL) AND ts.closed_at IS NULL 
+         WHERE ts.table_id = $1 AND ts.organization_id = $2 AND ts.location_id = $3 AND ts.closed_at IS NULL
          LIMIT 1`,
-        [tableUuid, locationUuid]
+        [tableUuid, organizationUuid, locationUuid]
       );
 
       if (sessionRes.rows.length === 0) return null;
@@ -124,8 +129,11 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
   }
 
   async listActive(ctxOrLocationId: TenantContext | string): Promise<TableSession[]> {
-    const locationId = typeof ctxOrLocationId === "string" ? ctxOrLocationId : ctxOrLocationId.locationId;
-    const locationUuid = ensureUuid(locationId);
+    if (typeof ctxOrLocationId === "string" || !ctxOrLocationId.organizationId) {
+      throw new Error("PostgreSQL session access requires explicit organizationId and locationId");
+    }
+    const locationUuid = ensureUuid(ctxOrLocationId.locationId);
+    const organizationUuid = ensureUuid(ctxOrLocationId.organizationId);
 
     const client = await this.pool.connect();
     try {
@@ -133,9 +141,9 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
         `SELECT ts.*, t.label as table_label 
          FROM table_sessions ts 
          LEFT JOIN tables t ON t.id = ts.table_id 
-         WHERE (ts.location_id = $1 OR ts.location_id IS NULL) AND ts.closed_at IS NULL 
+         WHERE ts.organization_id = $1 AND ts.location_id = $2 AND ts.closed_at IS NULL
          ORDER BY ts.opened_at DESC`,
-        [locationUuid]
+        [organizationUuid, locationUuid]
       );
 
       const sessions: TableSession[] = [];
@@ -153,6 +161,7 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
       throw new Error("listAll in PostgresTableSessionRepository requires explicit TenantContext");
     }
     const locationUuid = ensureUuid(ctx.locationId);
+    const organizationUuid = ensureUuid(ctx.organizationId!);
 
     const client = await this.pool.connect();
     try {
@@ -160,9 +169,9 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
         `SELECT ts.*, t.label as table_label 
          FROM table_sessions ts 
          LEFT JOIN tables t ON t.id = ts.table_id 
-         WHERE (ts.location_id = $1 OR ts.location_id IS NULL) 
+         WHERE ts.organization_id = $1 AND ts.location_id = $2
          ORDER BY ts.opened_at DESC`,
-        [locationUuid]
+        [organizationUuid, locationUuid]
       );
 
       const sessions: TableSession[] = [];
@@ -387,8 +396,10 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
 
       // 1. Concurrency and Lock Check
       const existingRes = await client.query(
-        `SELECT version, closed_at FROM table_sessions WHERE id = $1 FOR UPDATE`,
-        [sessionUuid]
+        `SELECT version, closed_at FROM table_sessions
+         WHERE id = $1 AND organization_id = $2 AND location_id = $3
+         FOR UPDATE`,
+        [sessionUuid, orgUuid, locUuid]
       );
 
       if (existingRes.rows.length > 0) {
@@ -399,8 +410,9 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
       } else {
         // Enforce active session per table constraint
         const activeTableRes = await client.query(
-          `SELECT id FROM table_sessions WHERE table_id = $1 AND location_id = $2 AND closed_at IS NULL`,
-          [tableUuid, locUuid]
+          `SELECT id FROM table_sessions
+           WHERE table_id = $1 AND organization_id = $2 AND location_id = $3 AND closed_at IS NULL`,
+          [tableUuid, orgUuid, locUuid]
         );
         if (activeTableRes.rows.length > 0) {
           throw new Error(`Table ${session.tableLabel} is already occupied by active session ${activeTableRes.rows[0].id}`);
@@ -412,8 +424,8 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
         const reqHash = hashPayload(idempotency.requestPayload);
         const existingIdem = await client.query(
           `SELECT request_hash, response_payload FROM idempotency_records 
-           WHERE location_id = $1 AND principal_id = $2 AND idempotency_key = $3`,
-          [locUuid, idempotency.principalId, idempotency.key]
+           WHERE organization_id = $1 AND location_id = $2 AND principal_id = $3 AND idempotency_key = $4`,
+          [orgUuid, locUuid, idempotency.principalId, idempotency.key]
         );
 
         if (existingIdem.rows.length > 0) {
@@ -710,12 +722,16 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
     requestPayload: unknown
   ): Promise<IdempotencyCheckResult<T>> {
     const locUuid = ensureUuid(ctx.locationId);
+    if (!ctx.organizationId) {
+      throw new Error("PostgreSQL idempotency access requires organizationId");
+    }
+    const orgUuid = ensureUuid(ctx.organizationId);
     const client = await this.pool.connect();
     try {
       const res = await client.query(
         `SELECT request_hash, response_payload FROM idempotency_records 
-         WHERE location_id = $1 AND principal_id = $2 AND idempotency_key = $3`,
-        [locUuid, principalId, key]
+         WHERE organization_id = $1 AND location_id = $2 AND principal_id = $3 AND idempotency_key = $4`,
+        [orgUuid, locUuid, principalId, key]
       );
 
       if (res.rows.length === 0) {
@@ -741,14 +757,16 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
     const { ctx, id: rawSessionId } = this.normalizeContext(ctxOrSessionId, maybeSessionId);
     const sessionUuid = ensureUuid(rawSessionId);
     const locationUuid = ensureUuid(ctx.locationId);
+    const organizationUuid = ensureUuid(ctx.organizationId!);
 
     const client = await this.pool.connect();
     try {
       const res = await client.query(
-        `SELECT * FROM audit_events 
-         WHERE session_id = $1 AND (location_id = $2 OR location_id IS NULL) 
+        `SELECT ae.* FROM audit_events ae
+         JOIN table_sessions ts ON ts.id = ae.session_id
+         WHERE ae.session_id = $1 AND ts.organization_id = $2 AND ae.location_id = $3
          ORDER BY occurred_at ASC`,
-        [sessionUuid, locationUuid]
+        [sessionUuid, organizationUuid, locationUuid]
       );
 
       return res.rows.map((e) => {

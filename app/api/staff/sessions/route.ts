@@ -42,7 +42,10 @@ export async function POST(req: NextRequest) {
       initialDiners
     } = body;
 
-    const service = getServerSessionService();
+    const service = getServerSessionService({
+      organizationId: auth.session.organizationId,
+      locationId: auth.session.locationId
+    });
     const result = await service.openTableSession(
       {
         restaurantId: auth.session.organizationId,

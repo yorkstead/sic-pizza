@@ -16,10 +16,9 @@ export async function POST(req: NextRequest) {
     }
 
     const repo = getServerSessionRepository();
-    const service = getServerSessionService();
-
     let resolvedSession: TableSession | null = null;
     let tableLabel = "Table";
+    let tenantContext: { organizationId: string; locationId: string } | null = null;
 
     // 1. Try verifying as cryptographically signed token
     if (tokenOrCode.includes(".")) {
@@ -28,14 +27,29 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "QR code expired or signature invalid. Please scan current table QR code." }, { status: 401 });
       }
 
-      resolvedSession = await repo.findById(payload.sessionId);
+      tenantContext = {
+        organizationId: payload.organizationId,
+        locationId: payload.locationId
+      };
+      resolvedSession = await repo.findById(tenantContext, payload.sessionId);
       if (!resolvedSession || resolvedSession.closedAt) {
         return NextResponse.json({ error: "This table session has ended or is no longer active." }, { status: 404 });
       }
 
       tableLabel = payload.tableLabel;
     } else {
-      // 2. Direct table ID / code fallback (e.g. tbl_11, SIC-11, 11)
+      if (process.env.SIC_DEMO_MODE !== "true") {
+        return NextResponse.json(
+          { error: "Unsigned table codes are available only in isolated demo mode." },
+          { status: 401 }
+        );
+      }
+
+      // 2. Explicit synthetic-demo table code fallback (e.g. tbl_11, SIC-11, 11)
+      tenantContext = {
+        organizationId: "sic_pizza_org",
+        locationId: "loc_downtown"
+      };
       const cleanCode = tokenOrCode.trim();
       const tableId = cleanCode.startsWith("tbl_")
         ? cleanCode
@@ -43,13 +57,19 @@ export async function POST(req: NextRequest) {
           ? `tbl_${cleanCode.slice(4)}`
           : `tbl_${cleanCode}`;
 
-      resolvedSession = await repo.findByTableId(tableId);
+      resolvedSession = await repo.findByTableId(tenantContext, tableId);
       if (!resolvedSession || resolvedSession.closedAt) {
         return NextResponse.json({ error: `No active dining session found for table code ${tokenOrCode}.` }, { status: 404 });
       }
 
       tableLabel = resolvedSession.tableLabel;
     }
+
+    if (!tenantContext) {
+      return NextResponse.json({ error: "Unable to resolve tenant scope." }, { status: 400 });
+    }
+
+    const service = getServerSessionService(tenantContext);
 
     // 3. Resolve or Add Diner
     let diner = existingDinerId

@@ -1,4 +1,5 @@
-import { boolean, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const orderStatus = pgEnum("order_status", ["draft", "submitted", "making", "ready", "served", "paid"]);
 export const itemStatus = pgEnum("item_status", ["draft", "proposed", "confirmed", "held", "fired", "preparing", "ready", "delivered", "voided"]);
@@ -63,8 +64,8 @@ export const tables = pgTable("tables", {
 
 export const tableSessions = pgTable("table_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").references(() => organizations.id),
-  locationId: uuid("location_id").references(() => locations.id),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  locationId: uuid("location_id").notNull().references(() => locations.id),
   tableId: uuid("table_id").notNull().references(() => tables.id),
   diningAreaId: uuid("dining_area_id").references(() => diningAreas.id),
   servicePeriodId: uuid("service_period_id").references(() => servicePeriods.id),
@@ -76,7 +77,11 @@ export const tableSessions = pgTable("table_sessions", {
   version: integer("version").notNull().default(1),
   openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
   closedAt: timestamp("closed_at", { withTimezone: true })
-});
+}, (table) => [
+  uniqueIndex("table_sessions_one_active_per_location_table")
+    .on(table.organizationId, table.locationId, table.tableId)
+    .where(sql`${table.closedAt} is null`)
+]);
 
 
 export const diners = pgTable("diners", {
@@ -233,8 +238,8 @@ export const auditEvents = pgTable("audit_events", {
 
 export const outboxEvents = pgTable("outbox_events", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").references(() => organizations.id),
-  locationId: uuid("location_id").references(() => locations.id),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  locationId: uuid("location_id").notNull().references(() => locations.id),
   sessionId: uuid("session_id").references(() => tableSessions.id),
   eventType: text("event_type").notNull(),
   payload: jsonb("payload").notNull(),
@@ -246,8 +251,8 @@ export const outboxEvents = pgTable("outbox_events", {
 
 export const idempotencyRecords = pgTable("idempotency_records", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").references(() => organizations.id),
-  locationId: uuid("location_id").references(() => locations.id),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  locationId: uuid("location_id").notNull().references(() => locations.id),
   principalId: text("principal_id").notNull(),
   idempotencyKey: text("idempotency_key").notNull(),
   requestHash: text("request_hash").notNull(),
@@ -255,5 +260,12 @@ export const idempotencyRecords = pgTable("idempotency_records", {
   responsePayload: jsonb("response_payload"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true })
-});
+}, (table) => [
+  uniqueIndex("idempotency_records_scope_key_unique").on(
+    table.organizationId,
+    table.locationId,
+    table.principalId,
+    table.idempotencyKey
+  )
+]);
 

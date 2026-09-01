@@ -1,6 +1,6 @@
 # ADR-0001: Authenticated tenant context is mandatory for persisted commands
 
-**Status:** Accepted as a blocking correction  
+**Status:** Accepted; scoped boundary and constraints implemented, database execution pending
 **Date:** 2026-09-01
 
 ## Context
@@ -20,6 +20,10 @@ Several persistence tests exercise `InMemoryTableSessionRepository` while descri
 
 ## Consequences
 
-The existing browser demo and in-memory domain tests remain available. The current PostgreSQL adapter and server routes are not pilot-ready until the command boundary, migrations, and real integration suite implement this decision. Payments, realtime delivery, offline replay, and hardware adapters remain simulations or unverified integrations until they run on this corrected persisted command path.
+The existing browser demo and in-memory domain tests remain available. Server-created services are now bound to authenticated organization/location context, PostgreSQL queries require exact scope, state/audit/outbox writes share one repository transaction, and migration `0003_premium_sentinel.sql` adds non-null ownership plus active-session and idempotency uniqueness constraints.
+
+A disposable PostgreSQL harness exists at `tests/integration/postgres-persistence.integration.ts`, but it has not executed because `TEST_DATABASE_URL` is not configured. The configured `DATABASE_URL` was identified as a non-disposable Neon database and was not used. PostgreSQL restart survival, rollback, cross-connection concurrency, and migration compatibility therefore remain unverified until the harness passes against an approved disposable database.
+
+Payments, realtime delivery, offline replay, and hardware adapters remain simulations or unverified integrations until they run on this corrected persisted command path. Durable service-level idempotent replay also needs end-to-end PostgreSQL verification rather than relying on aggregate-memory tests.
 
 No production migration, deployment, provider change, or live-data access is authorized by this ADR.

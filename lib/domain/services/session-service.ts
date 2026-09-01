@@ -1,4 +1,4 @@
-import type { TableSessionRepository } from "./session-repository";
+import type { TableSessionRepository, TenantContext } from "./session-repository";
 import type { TableSession, Diner, TableSessionProjection, DiningStage } from "../models/session";
 import { projectTableSession, deriveFinancials, deriveDiningStage } from "../models/session";
 import type { OrderItem, SelectedModifier, SplitMode } from "../models/order";
@@ -20,10 +20,24 @@ export interface CommandContext {
 export type DomainEventListener = (event: DomainEvent, session: TableSession) => void | Promise<void>;
 
 export class TableSessionService {
+  private pendingEvents = new WeakMap<TableSession, DomainEvent[]>();
+
   constructor(
     private repo: TableSessionRepository,
-    private eventListener?: DomainEventListener
+    private eventListener?: DomainEventListener,
+    private tenantContext?: TenantContext
   ) {}
+
+  private assertTenantContext(organizationId: string, locationId: string): TenantContext {
+    const context = this.tenantContext ?? { organizationId, locationId };
+    if (
+      context.organizationId !== organizationId ||
+      context.locationId !== locationId
+    ) {
+      throw new Error("Tenant context does not match the requested session scope");
+    }
+    return context;
+  }
 
   private async emit(
     session: TableSession,
@@ -47,14 +61,36 @@ export class TableSessionService {
     });
 
     session.events.push(event);
-    await this.repo.appendEvent(event);
+    const pending = this.pendingEvents.get(session) ?? [];
+    pending.push(event);
+    this.pendingEvents.set(session, pending);
     session.version = (session.version || 0) + 1;
 
-    if (this.eventListener) {
-      await this.eventListener(event, session);
-    }
-
     return event;
+  }
+
+  private async persistSession(session: TableSession): Promise<void> {
+    const events = this.pendingEvents.get(session) ?? [];
+    const tenantContext = this.assertTenantContext(
+      session.restaurantId,
+      session.locationId
+    );
+
+    await this.repo.commitSessionTransaction(tenantContext, {
+      session,
+      events,
+      outboxEvents: events.map((event) => ({
+        eventType: event.type,
+        payload: event
+      }))
+    });
+    this.pendingEvents.delete(session);
+
+    if (this.eventListener) {
+      for (const event of events) {
+        await this.eventListener(event, session);
+      }
+    }
   }
 
 
@@ -89,7 +125,8 @@ export class TableSessionService {
     },
     ctx: CommandContext = { actorType: "employee", actorId: params.openedByEmployeeId }
   ): Promise<{ session: TableSession; projection: TableSessionProjection }> {
-    const existing = await this.repo.findByTableId(params.tableId);
+    const tenantContext = this.assertTenantContext(params.restaurantId, params.locationId);
+    const existing = await this.repo.findByTableId(tenantContext, params.tableId);
     if (existing && !existing.closedAt) {
       throw new Error(`Table ${params.tableLabel} is already occupied by active session ${existing.id}`);
     }
@@ -158,7 +195,7 @@ export class TableSessionService {
       );
     }
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, projection: projectTableSession(session) };
   }
 
@@ -189,7 +226,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, projection: projectTableSession(session), diner };
   }
 
@@ -220,7 +257,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, projection: projectTableSession(session) };
   }
 
@@ -261,7 +298,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, projection: projectTableSession(session) };
   }
 
@@ -310,7 +347,7 @@ export class TableSessionService {
         { assistantEmployeeId, assignedBy: ctx.actorId },
         ctx
       );
-      await this.repo.save(session);
+      await this.persistSession(session);
     }
 
     return { session, projection: projectTableSession(session) };
@@ -340,7 +377,7 @@ export class TableSessionService {
         { assistantEmployeeId, removedBy: ctx.actorId },
         ctx
       );
-      await this.repo.save(session);
+      await this.persistSession(session);
     }
 
     return { session, projection: projectTableSession(session) };
@@ -413,7 +450,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, item, projection: projectTableSession(session) };
   }
 
@@ -444,7 +481,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, item, projection: projectTableSession(session) };
   }
 
@@ -522,7 +559,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, item, projection: projectTableSession(session) };
   }
 
@@ -561,7 +598,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, item, projection: projectTableSession(session) };
   }
 
@@ -594,7 +631,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, item, projection: projectTableSession(session) };
   }
 
@@ -628,7 +665,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, item, projection: projectTableSession(session) };
   }
 
@@ -662,7 +699,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, item, projection: projectTableSession(session) };
   }
 
@@ -702,7 +739,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, item, projection: projectTableSession(session) };
   }
 
@@ -818,7 +855,7 @@ export class TableSessionService {
     );
 
     this.recordIdempotency(session, ctx.idempotencyKey, newTickets);
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, tickets: newTickets, projection: projectTableSession(session) };
   }
 
@@ -843,7 +880,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, projection: projectTableSession(session) };
   }
 
@@ -880,7 +917,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, projection: projectTableSession(session) };
   }
 
@@ -921,7 +958,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, projection: projectTableSession(session) };
   }
 
@@ -964,7 +1001,7 @@ export class TableSessionService {
       ticket.deliveredAt = now;
     }
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, projection: projectTableSession(session) };
   }
 
@@ -1006,7 +1043,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, projection: projectTableSession(session) };
   }
 
@@ -1046,7 +1083,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, projection: projectTableSession(session) };
   }
 
@@ -1131,7 +1168,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, request, projection: projectTableSession(session) };
   }
 
@@ -1163,7 +1200,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, request, projection: projectTableSession(session) };
   }
 
@@ -1196,7 +1233,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, request, projection: projectTableSession(session) };
   }
 
@@ -1227,7 +1264,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, request, projection: projectTableSession(session) };
   }
 
@@ -1259,7 +1296,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, request, projection: projectTableSession(session) };
   }
 
@@ -1290,7 +1327,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, request, projection: projectTableSession(session) };
   }
 
@@ -1316,7 +1353,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, request, projection: projectTableSession(session) };
   }
 
@@ -1344,7 +1381,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, request, projection: projectTableSession(session) };
   }
 
@@ -1404,7 +1441,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, check, projection: projectTableSession(session) };
   }
 
@@ -1432,7 +1469,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, check, projection: projectTableSession(session) };
   }
 
@@ -1500,7 +1537,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, payment, projection: projectTableSession(session) };
   }
 
@@ -1588,7 +1625,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, payment, projection: projectTableSession(session) };
   }
 
@@ -1627,7 +1664,7 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, projection: projectTableSession(session) };
   }
 
@@ -1649,13 +1686,16 @@ export class TableSessionService {
       ctx
     );
 
-    await this.repo.save(session);
+    await this.persistSession(session);
     return { session, projection: projectTableSession(session) };
   }
 
   private async mustGetSession(sessionId: string): Promise<TableSession> {
-    const session = await this.repo.findById(sessionId);
+    const session = this.tenantContext
+      ? await this.repo.findById(this.tenantContext, sessionId)
+      : await this.repo.findById(sessionId);
     if (!session) throw new Error(`Table session ${sessionId} not found`);
+    this.assertTenantContext(session.restaurantId, session.locationId);
     return session;
   }
 }

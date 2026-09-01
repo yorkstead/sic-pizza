@@ -110,16 +110,16 @@ describe("Restaurant Operating System: Hardware Integration & Controlled-Pilot R
   });
 
   describe("3. Controlled-Pilot Release Gate Audit", () => {
-    it("executes full 7-pillar audit and returns 100% readiness pass", async () => {
+    it("blocks pilot readiness when the test runtime uses in-memory persistence", async () => {
       const report = await runControlledPilotAudit();
 
       expect(report.totalChecks).toBe(7);
-      expect(report.passedChecks).toBe(7);
-
-      expect(report.failedChecks).toBe(0);
-      expect(report.scorePercent).toBe(100);
-      expect(report.readyForControlledPilot).toBe(true);
-      expect(report.recommendation).toContain("SYSTEM READY");
+      expect(report.failedChecks).toBeGreaterThanOrEqual(1);
+      expect(report.readyForControlledPilot).toBe(false);
+      expect(report.recommendation).toContain("RELEASE GATE BLOCKED");
+      expect(report.checks.find((check) => check.id === "CHK_PERSISTENCE_01")).toMatchObject({
+        status: "FAIL"
+      });
 
       // Verify each individual pillar was evaluated
       const pillarTitles = report.checks.map((c) => c.pillar);

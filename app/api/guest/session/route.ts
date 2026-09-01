@@ -12,7 +12,13 @@ export async function GET(req: NextRequest) {
     }
 
     const repo = getServerSessionRepository();
-    const session = await repo.findById(auth.guest.sessionId);
+    const session = await repo.findById(
+      {
+        organizationId: auth.guest.organizationId,
+        locationId: auth.guest.locationId
+      },
+      auth.guest.sessionId
+    );
     if (!session || session.closedAt) {
       return NextResponse.json({ error: "Session has been closed." }, { status: 404 });
     }

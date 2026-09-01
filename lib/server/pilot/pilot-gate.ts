@@ -12,6 +12,7 @@ import { getRealtimeEventBus } from "../realtime/event-bus";
 import { getSandboxPaymentAdapter } from "../payments/sandbox-adapter";
 import { getHardwarePrinterAdapter } from "../hardware/printer-adapter";
 import { BillingEngine } from "../../domain/services/billing";
+import { PostgresTableSessionRepository } from "../../domain/server";
 
 export interface PilotCheckResult {
   id: string;
@@ -40,8 +41,17 @@ export async function runControlledPilotAudit(): Promise<ControlledPilotGateRepo
 
   try {
     const t0 = Date.now();
-    const service = getServerSessionService();
+    const tenantContext = {
+      organizationId: "sic_pizza_org",
+      locationId: "loc_downtown"
+    };
+    const service = getServerSessionService(tenantContext);
     const repo = getServerSessionRepository();
+    if (!(repo instanceof PostgresTableSessionRepository)) {
+      throw new Error(
+        "Persistent PostgreSQL runtime is not active; an in-memory demo cannot satisfy the durability gate."
+      );
+    }
     const probeId = `audit_probe_${Date.now()}`;
     const { session } = await service.openTableSession({
       id: probeId,
@@ -52,7 +62,7 @@ export async function runControlledPilotAudit(): Promise<ControlledPilotGateRepo
       diningAreaId: "area_main",
       openedByEmployeeId: "emp_jordan"
     });
-    const loaded = await repo.findById(probeId);
+    const loaded = await repo.findById(tenantContext, probeId);
     if (loaded && loaded.id === probeId) {
       checks.push({
         id: "CHK_PERSISTENCE_01",
@@ -319,7 +329,7 @@ export async function runControlledPilotAudit(): Promise<ControlledPilotGateRepo
     scorePercent,
     checks,
     recommendation: readyForControlledPilot
-      ? "SYSTEM READY: All 7 operational pillars passed automated audit. Safe to proceed with single-station controlled pilot."
-      : "RELEASE GATE BLOCKED: Resolve failing pillar checks before initiating pilot."
+      ? "AUTOMATED PREFLIGHT PASSED: Complete the documented security, deployment, restore, and physical-device gates before approving a controlled pilot."
+      : "RELEASE GATE BLOCKED: Resolve failing and externally unverified pillars before initiating a pilot."
   };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { InMemoryTableSessionRepository } from "../domain";
+import { InMemoryTableSessionRepository, TableSessionService } from "../domain";
 import { PostgresTableSessionRepository } from "../domain/server";
 import { createServerSessionRepository } from "./session-store";
 
@@ -27,5 +27,42 @@ describe("server session repository runtime selection", () => {
 
     expect(repository).toBeInstanceOf(PostgresTableSessionRepository);
     await (repository as PostgresTableSessionRepository).close();
+  });
+
+  it("prevents a tenant-bound service from opening or reading another tenant's session", async () => {
+    const repository = new InMemoryTableSessionRepository();
+    const tenantA = {
+      organizationId: "org-a",
+      locationId: "location-a"
+    };
+    const tenantB = {
+      organizationId: "org-b",
+      locationId: "location-b"
+    };
+    const serviceA = new TableSessionService(repository, undefined, tenantA);
+    const serviceB = new TableSessionService(repository, undefined, tenantB);
+
+    const { session } = await serviceA.openTableSession({
+      restaurantId: tenantA.organizationId,
+      locationId: tenantA.locationId,
+      tableId: "table-a",
+      tableLabel: "Table A",
+      diningAreaId: "main",
+      openedByEmployeeId: "employee-a"
+    });
+
+    await expect(
+      serviceB.addDiner(session.id, "Cross Tenant Guest")
+    ).rejects.toThrow(/not found/);
+    await expect(
+      serviceA.openTableSession({
+        restaurantId: tenantB.organizationId,
+        locationId: tenantB.locationId,
+        tableId: "table-b",
+        tableLabel: "Table B",
+        diningAreaId: "main",
+        openedByEmployeeId: "employee-b"
+      })
+    ).rejects.toThrow(/Tenant context does not match/);
   });
 });

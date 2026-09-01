@@ -4,6 +4,7 @@ import {
   TableSessionService
 } from "../domain";
 import { PostgresTableSessionRepository } from "../domain/server";
+import type { TenantContext } from "../domain";
 
 // Server-side persistent session repository singleton
 let globalRepo: TableSessionRepository | undefined;
@@ -43,12 +44,13 @@ export function getServerSessionRepository(): TableSessionRepository {
 
 import { getRealtimeEventBus } from "./realtime/event-bus";
 
-export function getServerSessionService(): TableSessionService {
+export function getServerSessionService(tenantContext: TenantContext): TableSessionService {
   return new TableSessionService(
     getServerSessionRepository(),
     (event, session) => {
       getRealtimeEventBus().publish(session.id, event, session.version || 1);
-    }
+    },
+    tenantContext
   );
 }
 

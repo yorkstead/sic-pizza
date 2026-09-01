@@ -29,8 +29,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const service = getServerSessionService();
     const guest = auth.guest;
+    const service = getServerSessionService({
+      organizationId: guest.organizationId,
+      locationId: guest.locationId
+    });
     const ctx = {
       actorType: "guest" as const,
       actorId: guest.dinerId,
