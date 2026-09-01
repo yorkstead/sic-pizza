@@ -9,6 +9,7 @@ describe("Theme System & Script Verification", () => {
     expect(THEME_INIT_SCRIPT).toContain("prefers-color-scheme");
     expect(THEME_INIT_SCRIPT).toContain("document.documentElement");
     expect(THEME_INIT_SCRIPT).toContain("classList");
+    expect(THEME_INIT_SCRIPT).not.toContain('!stored && prefersDark');
   });
 
   it("handles storage logic correctly in init script string", () => {

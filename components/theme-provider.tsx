@@ -18,7 +18,7 @@ const STORAGE_KEY = "sic-theme";
 const emptySubscribe = () => () => {};
 
 function getSystemTheme(): ResolvedTheme {
-  if (typeof window === "undefined") return "dark";
+  if (typeof window === "undefined") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
@@ -42,7 +42,7 @@ export function ThemeProvider({
     }
     return defaultTheme;
   });
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("dark");
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
   const [, startTransition] = useTransition();
 
 
@@ -94,7 +94,7 @@ export function ThemeProvider({
     <ThemeContext.Provider
       value={{
         theme,
-        resolvedTheme: isMounted ? resolvedTheme : "dark",
+        resolvedTheme: isMounted ? resolvedTheme : "light",
         setTheme,
       }}
     >
@@ -120,7 +120,7 @@ export const THEME_INIT_SCRIPT = `
   try {
     var stored = localStorage.getItem("${STORAGE_KEY}");
     var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    var isDark = stored === "dark" || (!stored && prefersDark) || (stored === "system" && prefersDark);
+    var isDark = stored === "dark" || (stored === "system" && prefersDark);
     var root = document.documentElement;
     root.classList.remove("light", "dark");
     root.classList.add(isDark ? "dark" : "light");

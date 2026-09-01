@@ -7,10 +7,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fcfbf9" },
-    { media: "(prefers-color-scheme: dark)", color: "#171412" },
-  ],
+  themeColor: "#f7f7f6",
 };
 
 export const metadata: Metadata = {
@@ -35,7 +32,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         />
       </head>
       <body>
-        <ThemeProvider defaultTheme="system">
+        <ThemeProvider defaultTheme="light">
           {children}
         </ThemeProvider>
       </body>

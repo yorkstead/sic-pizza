@@ -61,14 +61,14 @@ export function ThemeToggle({
             <span
               className={cn(
                 "absolute -top-1 -right-1 size-2 rounded-full",
-                resolvedTheme === "dark" ? "bg-amber-400" : "bg-orange-500"
+                resolvedTheme === "dark" ? "bg-white" : "bg-black"
               )}
             />
           </div>
         ) : theme === "light" ? (
-          <Sun className="size-4 text-amber-500" />
+          <Sun className="size-4 text-foreground" />
         ) : (
-          <Moon className="size-4 text-indigo-400" />
+          <Moon className="size-4 text-foreground" />
         )}
       </button>
     );
