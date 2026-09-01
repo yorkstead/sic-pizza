@@ -96,7 +96,7 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
       if (sessionRes.rows.length === 0) return null;
       const row = sessionRes.rows[0];
 
-      return await this.hydrateSession(client, row, rawSessionId);
+      return await this.hydrateSession(client, row, rawSessionId, ctx);
     } finally {
       client.release();
     }
@@ -122,7 +122,7 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
       if (sessionRes.rows.length === 0) return null;
       const row = sessionRes.rows[0];
 
-      return await this.hydrateSession(client, row);
+      return await this.hydrateSession(client, row, undefined, ctx);
     } finally {
       client.release();
     }
@@ -148,7 +148,7 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
 
       const sessions: TableSession[] = [];
       for (const row of sessionRes.rows) {
-        sessions.push(await this.hydrateSession(client, row));
+        sessions.push(await this.hydrateSession(client, row, undefined, ctxOrLocationId));
       }
       return sessions;
     } finally {
@@ -176,7 +176,7 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
 
       const sessions: TableSession[] = [];
       for (const row of sessionRes.rows) {
-        sessions.push(await this.hydrateSession(client, row));
+        sessions.push(await this.hydrateSession(client, row, undefined, ctx));
       }
       return sessions;
     } finally {
@@ -184,7 +184,12 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
     }
   }
 
-  private async hydrateSession(client: PoolClient, rawRow: Record<string, unknown>, preferredId?: string): Promise<TableSession> {
+  private async hydrateSession(
+    client: PoolClient,
+    rawRow: Record<string, unknown>,
+    preferredId?: string,
+    preferredContext?: TenantContext
+  ): Promise<TableSession> {
 
     const row = rawRow as unknown as SessionRow;
     const sessionUuid = row.id;
@@ -350,8 +355,8 @@ export class PostgresTableSessionRepository implements TableSessionRepository {
 
     return {
       id: preferredId || row.id,
-      restaurantId: row.organization_id || "sic_pizza_org",
-      locationId: row.location_id || "loc_downtown",
+      restaurantId: preferredContext?.organizationId || row.organization_id || "sic_pizza_org",
+      locationId: preferredContext?.locationId || row.location_id || "loc_downtown",
       tableId: row.table_id,
       tableLabel: row.table_label || "Table",
       diningAreaId: row.dining_area_id || "area_main",

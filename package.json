@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:integration": "bun test ./tests/integration/postgres-persistence.integration.ts",
+    "test:workflow": "bun run build && bun test ./tests/integration/persisted-api-workflow.integration.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },

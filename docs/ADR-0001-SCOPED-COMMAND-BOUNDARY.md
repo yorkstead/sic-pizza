@@ -26,4 +26,6 @@ A disposable PostgreSQL harness exists at `tests/integration/postgres-persistenc
 
 Payments, realtime delivery, offline replay, and hardware adapters remain simulations or unverified integrations until they run on this corrected persisted command path. Durable service-level command replay beyond the repository contract still needs endpoint-level PostgreSQL verification.
 
+The first endpoint-level verification was subsequently completed for kitchen firing. New runtime entity IDs are canonical UUIDs, and `fireCourse` checks and records its scoped idempotency result in PostgreSQL. A duplicate request after a full Next.js restart returned the original ticket result without creating a second kitchen effect. Other mutation types still require the same endpoint-level durable-replay treatment before the general idempotency claim is complete.
+
 No production migration, deployment, provider change, or live-data access is authorized by this ADR.

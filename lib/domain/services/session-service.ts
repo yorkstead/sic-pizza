@@ -1,4 +1,8 @@
-import type { TableSessionRepository, TenantContext } from "./session-repository";
+import type {
+  CommitTransactionParams,
+  TableSessionRepository,
+  TenantContext
+} from "./session-repository";
 import type { TableSession, Diner, TableSessionProjection, DiningStage } from "../models/session";
 import { projectTableSession, deriveFinancials, deriveDiningStage } from "../models/session";
 import type { OrderItem, SelectedModifier, SplitMode } from "../models/order";
@@ -19,6 +23,12 @@ export interface CommandContext {
 
 export type DomainEventListener = (event: DomainEvent, session: TableSession) => void | Promise<void>;
 
+function createEntityId(fallbackPrefix: string): string {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${fallbackPrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export class TableSessionService {
   private pendingEvents = new WeakMap<TableSession, DomainEvent[]>();
 
@@ -34,7 +44,9 @@ export class TableSessionService {
       context.organizationId !== organizationId ||
       context.locationId !== locationId
     ) {
-      throw new Error("Tenant context does not match the requested session scope");
+      throw new Error(
+        `Tenant context does not match the requested session scope (${context.organizationId}/${context.locationId} != ${organizationId}/${locationId})`
+      );
     }
     return context;
   }
@@ -69,7 +81,10 @@ export class TableSessionService {
     return event;
   }
 
-  private async persistSession(session: TableSession): Promise<void> {
+  private async persistSession(
+    session: TableSession,
+    idempotency?: CommitTransactionParams["idempotency"]
+  ): Promise<void> {
     const events = this.pendingEvents.get(session) ?? [];
     const tenantContext = this.assertTenantContext(
       session.restaurantId,
@@ -79,6 +94,7 @@ export class TableSessionService {
     await this.repo.commitSessionTransaction(tenantContext, {
       session,
       events,
+      idempotency,
       outboxEvents: events.map((event) => ({
         eventType: event.type,
         payload: event
@@ -131,12 +147,12 @@ export class TableSessionService {
       throw new Error(`Table ${params.tableLabel} is already occupied by active session ${existing.id}`);
     }
 
-    const sessionId = params.id ?? (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `sess_${Date.now()}`);
+    const sessionId = params.id ?? createEntityId("session");
     const joinTokenHash = `token_hash_${sessionId.substring(0, 8)}`;
     const now = new Date().toISOString();
 
     const diners: Diner[] = (params.initialDiners || []).map((name, index) => ({
-      id: `diner_${sessionId}_${index + 1}`,
+      id: createEntityId("diner"),
       sessionId,
       displayName: name,
       seatNumber: index + 1,
@@ -206,7 +222,7 @@ export class TableSessionService {
     ctx: CommandContext = { actorType: "employee" }
   ): Promise<{ session: TableSession; projection: TableSessionProjection; diner: Diner }> {
     const session = await this.mustGetSession(sessionId);
-    const dinerId = `diner_${session.id}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+    const dinerId = createEntityId("diner");
     const diner: Diner = {
       id: dinerId,
       sessionId: session.id,
@@ -403,7 +419,7 @@ export class TableSessionService {
     ctx: CommandContext = { actorType: "guest" }
   ): Promise<{ session: TableSession; item: OrderItem; projection: TableSessionProjection }> {
     const session = await this.mustGetSession(sessionId);
-    const itemId = `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const itemId = createEntityId("item");
     const now = new Date().toISOString();
 
     const assignedDinerIds = itemData.assignedDinerIds || (itemData.dinerId ? [itemData.dinerId] : []);
@@ -510,7 +526,7 @@ export class TableSessionService {
       return { session, item: cached, projection: projectTableSession(session) };
     }
 
-    const itemId = `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const itemId = createEntityId("item");
     const now = new Date().toISOString();
 
     const assignedDinerIds = itemData.assignedDinerIds || (itemData.dinerId ? [itemData.dinerId] : []);
@@ -752,6 +768,28 @@ export class TableSessionService {
       throw new Error("Permission denied: Guests cannot fire kitchen courses");
     }
     const session = await this.mustGetSession(sessionId);
+    const durableRequest = { command: "fire_course", sessionId, course };
+    const idempotencyPrincipal = ctx.actorId ?? ctx.actorType;
+    if (ctx.idempotencyKey) {
+      const durableResult = await this.repo.getIdempotencyResult<KitchenTicket[]>(
+        this.assertTenantContext(session.restaurantId, session.locationId),
+        idempotencyPrincipal,
+        ctx.idempotencyKey,
+        durableRequest
+      );
+      if (durableResult.conflict) {
+        throw new Error(
+          `Idempotency conflict: key '${ctx.idempotencyKey}' was already used with a different request`
+        );
+      }
+      if (durableResult.exists && durableResult.cachedResult) {
+        return {
+          session,
+          tickets: durableResult.cachedResult,
+          projection: projectTableSession(session)
+        };
+      }
+    }
     const cached = this.checkIdempotency<KitchenTicket[]>(session, ctx.idempotencyKey);
     if (cached) {
       return { session, tickets: cached, projection: projectTableSession(session) };
@@ -778,7 +816,7 @@ export class TableSessionService {
     const now = new Date().toISOString();
 
     for (const [stationId, items] of itemsByStation.entries()) {
-      const ticketId = `tkt_${Date.now()}_${stationId}_${Math.random().toString(36).substring(2, 5)}`;
+      const ticketId = createEntityId("ticket");
       const ticket: KitchenTicket = {
         id: ticketId,
         sessionId: session.id,
@@ -855,7 +893,17 @@ export class TableSessionService {
     );
 
     this.recordIdempotency(session, ctx.idempotencyKey, newTickets);
-    await this.persistSession(session);
+    await this.persistSession(
+      session,
+      ctx.idempotencyKey
+        ? {
+            key: ctx.idempotencyKey,
+            principalId: idempotencyPrincipal,
+            requestPayload: durableRequest,
+            responsePayload: newTickets
+          }
+        : undefined
+    );
     return { session, tickets: newTickets, projection: projectTableSession(session) };
   }
 
@@ -1124,7 +1172,7 @@ export class TableSessionService {
     }
 
     const category = normalizeRequestCategory(rawCategoryOrType);
-    const reqId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const reqId = createEntityId("request");
     const diner = session.diners.find((d) => d.id === dinerId);
     const routing = routeRequest(category, { assignedServerId: session.assignedServerId });
 
@@ -1393,7 +1441,7 @@ export class TableSessionService {
     ctx: CommandContext = { actorType: "employee" }
   ): Promise<{ session: TableSession; check: Check; projection: TableSessionProjection }> {
     const session = await this.mustGetSession(sessionId);
-    const checkId = `chk_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const checkId = createEntityId("check");
     const billableItems = session.items.filter(
       (i) => i.status !== "voided" && i.status !== "proposed"
     );
@@ -1486,7 +1534,7 @@ export class TableSessionService {
     if (!check) throw new Error(`Check ${checkId} not found`);
     if (amountCents <= 0) throw new Error("Payment amount must be positive");
 
-    const paymentId = `pay_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const paymentId = createEntityId("payment");
 
     await this.emit(
       session,
@@ -1571,7 +1619,7 @@ export class TableSessionService {
       check = newCheck;
     }
 
-    const paymentId = `pay_diner_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const paymentId = createEntityId("payment");
 
     await this.emit(
       session,
