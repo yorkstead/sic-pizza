@@ -43,6 +43,7 @@ describe("PostgreSQL transactional persistence", () => {
   const diningAreaId = ensureUuid(`integration-area-${runId}`);
   const tableId = ensureUuid(`integration-table-${runId}`);
   const concurrentTableId = ensureUuid(`integration-concurrent-table-${runId}`);
+  const idempotencyTableId = ensureUuid(`integration-idempotency-table-${runId}`);
   const pool = new Pool({ connectionString: requireDisposableDatabaseUrl() });
   const repository = new PostgresTableSessionRepository({ pool });
 
@@ -101,8 +102,9 @@ describe("PostgreSQL transactional persistence", () => {
     await pool.query(
       `INSERT INTO tables (id, location_id, dining_area_id, label, seats)
        VALUES ($1, $2, $3, 'Integration Table', 4),
-              ($4, $2, $3, 'Concurrent Integration Table', 4)`,
-      [tableId, locationId, diningAreaId, concurrentTableId]
+              ($4, $2, $3, 'Concurrent Integration Table', 4),
+              ($5, $2, $3, 'Idempotency Integration Table', 4)`,
+      [tableId, locationId, diningAreaId, concurrentTableId, idempotencyTableId]
     );
   });
 
@@ -174,7 +176,7 @@ describe("PostgreSQL transactional persistence", () => {
   });
 
   it("persists idempotency responses and rejects conflicting key reuse", async () => {
-    const created = session(`idempotency-${runId}`);
+    const created = session(`idempotency-${runId}`, idempotencyTableId);
     await repository.commitSessionTransaction(tenant, {
       session: created,
       idempotency: {
