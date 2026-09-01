@@ -12,6 +12,8 @@ import {
   type TableSessionProjection
 } from "@/lib/domain";
 import { useTableRealtime } from "@/lib/client/use-table-realtime";
+import { OutboxStatusBar } from "@/components/offline/outbox-status-bar";
+
 
 export function GuestSession({ code }: { code: string }) {
   const [session, setSession] = useState<TableSession | null>(null);
@@ -144,9 +146,12 @@ export function GuestSession({ code }: { code: string }) {
   }
 
   return (
-    <GuestSessionApp
-      initialSession={session}
-      initialProjection={projection}
+    <>
+      <OutboxStatusBar />
+      <GuestSessionApp
+        initialSession={session}
+        initialProjection={projection}
+
       onProposeItem={async (itemData) => {
         if (guestToken) {
           const res = await fetch("/api/guest/actions", {
@@ -226,7 +231,7 @@ export function GuestSession({ code }: { code: string }) {
         setSession({ ...res.session });
         setProjection({ ...res.projection });
       }}
-    />
+      />
+    </>
   );
 }
-

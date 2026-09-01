@@ -54,6 +54,8 @@ import {
   type StaffSessionPayload
 } from "@/lib/server/auth/staff-auth";
 import { useTableRealtime } from "@/lib/client/use-table-realtime";
+import { OutboxStatusBar } from "@/components/offline/outbox-status-bar";
+
 
 
 const SERVER_ID = "emp_jordan";
@@ -553,7 +555,10 @@ export function PosDemo() {
 
 
   return (
-    <div className="mx-auto min-h-screen max-w-7xl pb-24 lg:grid lg:grid-cols-[220px_1fr] lg:pb-0">
+    <>
+      <OutboxStatusBar />
+      <div className="mx-auto min-h-screen max-w-7xl pb-24 lg:grid lg:grid-cols-[220px_1fr] lg:pb-0">
+
       {/* Desktop Sidebar */}
       <aside className="hidden border-r p-5 lg:flex lg:flex-col bg-card/40">
         <div className="flex items-center gap-2.5">
@@ -1481,6 +1486,8 @@ export function PosDemo() {
         </div>
       )}
     </div>
+    </>
   );
 }
+
 
