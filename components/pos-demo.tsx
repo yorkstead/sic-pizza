@@ -47,6 +47,13 @@ import { ConnectivityStatusBar } from "./offline/connectivity-status-bar";
 
 const RESTAURANT_ID = "sic_pizza_org";
 const LOCATION_ID = "loc_downtown";
+import {
+  authenticateStaffPin,
+  createManagerOverride,
+  DEMO_STAFF_DIRECTORY,
+  type StaffSessionPayload
+} from "@/lib/server/auth/staff-auth";
+
 const SERVER_ID = "emp_jordan";
 const SERVER_NAME = "Jordan · Server";
 
@@ -75,6 +82,7 @@ export function PosDemo() {
     [selectedTenantId]
   );
   const [authenticated, setAuthenticated] = useState(false);
+  const [staffSession, setStaffSession] = useState<StaffSessionPayload | null>(null);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [view, setView] = useState<"floor" | "dothisnext" | "queue" | "kds" | "manager" | "analytics" | "join" | "history">("floor");
@@ -83,10 +91,22 @@ export function PosDemo() {
   const [dismissedItemIds, setDismissedItemIds] = useState<Set<string>>(new Set());
   const [isShiftHandoffOpen, setIsShiftHandoffOpen] = useState(false);
 
+  // Manager Override state
+  const [overrideModal, setOverrideModal] = useState<{
+    open: boolean;
+    action: string;
+    itemId?: string;
+    reason: string;
+    sessionId?: string;
+  } | null>(null);
+  const [overridePin, setOverridePin] = useState("");
+  const [overrideError, setOverrideError] = useState("");
+
   // Repository & Domain Service instances
   const repo = useMemo(() => new InMemoryTableSessionRepository(), []);
   const service = useMemo(() => new TableSessionService(repo), [repo]);
   const mutationQueue = useMemo(() => new ClientMutationQueue(), []);
+
 
   // Reactive state trigger
   const [revision, setRevision] = useState(0);
@@ -398,11 +418,15 @@ export function PosDemo() {
   const currentSession = selectedTableId ? activeSessionsByTable.get(selectedTableId) : undefined;
   const currentProjection = currentSession ? projectTableSession(currentSession) : undefined;
 
-  function login() {
-    if (pin !== "0420") {
-      setError("PIN not recognized. Seeded dev PIN is 0420.");
+  async function login(pinToAuth?: string) {
+    const inputPin = pinToAuth || pin;
+    setError("");
+    const res = await authenticateStaffPin(inputPin, "loc_downtown");
+    if (!res.success || !res.payload) {
+      setError(res.error || "PIN not recognized. Use demo PINs: Jordan (0420), Alex (8888), Sam (2468).");
       return;
     }
+    setStaffSession(res.payload);
     setAuthenticated(true);
   }
 
@@ -428,8 +452,8 @@ export function PosDemo() {
             <p className="text-xs text-muted-foreground">
               {currentTenant.theme.tagline}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Enter 4-digit dev PIN: <strong className="font-mono text-foreground">0420</strong>
+            <p className="text-xs text-muted-foreground mt-1 font-mono">
+              Server-Verified Staff PIN Authentication
             </p>
           </CardHeader>
           <CardContent className="space-y-4 pb-8">
@@ -471,15 +495,43 @@ export function PosDemo() {
               {error && <p className="mt-2 text-center text-xs font-bold text-destructive">{error}</p>}
             </div>
 
-            <Button size="lg" className="w-full" onClick={login}>
+            <Button size="lg" className="w-full" onClick={() => login()}>
               <Lock className="size-4 mr-1" />
               Sign In to Floor
             </Button>
+
+            {/* Quick Demo Role Selector */}
+            <div className="pt-2 border-t space-y-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block text-center">
+                Quick-Select Demo Staff Roles:
+              </span>
+              <div className="grid grid-cols-2 gap-1.5">
+                {DEMO_STAFF_DIRECTORY.map((s) => (
+                  <Button
+                    key={s.id}
+                    type="button"
+                    variant="secondary"
+                    className="h-8 text-[11px] justify-between px-2 font-normal"
+                    onClick={() => {
+                      setPin(s.pin);
+                      login(s.pin);
+                    }}
+                  >
+                    <span className="font-bold truncate">{s.displayName.split(" ")[0]}</span>
+                    <Badge className="text-[9px] px-1 py-0 font-mono">
+                      {s.role}
+                    </Badge>
+                  </Button>
+                ))}
+              </div>
+
+            </div>
           </CardContent>
         </Card>
       </main>
     );
   }
+
 
   return (
     <div className="mx-auto min-h-screen max-w-7xl pb-24 lg:grid lg:grid-cols-[220px_1fr] lg:pb-0">
@@ -788,12 +840,24 @@ export function PosDemo() {
                     triggerUpdate();
                   }}
                   onVoidItem={async (itemId, reason) => {
+                    const isManager = staffSession?.role === "manager" || staffSession?.role === "admin";
+                    if (!isManager) {
+                      setOverrideModal({
+                        open: true,
+                        action: "VOID_ITEM",
+                        itemId,
+                        reason: reason || "Customer request",
+                        sessionId: currentSession.id
+                      });
+                      return;
+                    }
                     await service.voidItem(currentSession.id, itemId, reason, {
                       actorType: "employee",
-                      actorId: SERVER_ID
+                      actorId: staffSession?.employeeId || SERVER_ID
                     });
                     triggerUpdate();
                   }}
+
                   onUpdateItemOwnership={async (itemId, ownership) => {
                     await service.updateItemOwnership(
                       currentSession.id,
@@ -1288,24 +1352,116 @@ export function PosDemo() {
       <ShiftHandoffDialog
         isOpen={isShiftHandoffOpen}
         onClose={() => setIsShiftHandoffOpen(false)}
-        activeServerId={SERVER_ID}
-        activeServerName={SERVER_NAME}
+        activeServerId={staffSession?.employeeId || SERVER_ID}
+        activeServerName={staffSession?.displayName || SERVER_NAME}
         allSessions={sessions}
         availableEmployees={[
           { id: "emp_jordan", name: "Jordan", role: "Server" },
-          { id: "emp_morgan", name: "Morgan", role: "Server" },
-          { id: "emp_taylor", name: "Taylor", role: "Server" },
-          { id: "emp_alex", name: "Alex", role: "Bartender" },
-          { id: "emp_sam_mgr", name: "Sam", role: "Floor Manager" }
+          { id: "emp_manager", name: "Alex", role: "Manager" },
+          { id: "emp_bartender", name: "Sam", role: "Bartender" },
+          { id: "emp_runner", name: "Casey", role: "Runner" },
+          { id: "emp_expo", name: "Taylor", role: "Expo" }
         ]}
         onTransferTables={async (sessionIds, toEmployeeId, reason) => {
           await service.transferMultipleTables(sessionIds, toEmployeeId, reason, {
             actorType: "employee",
-            actorId: SERVER_ID
+            actorId: staffSession?.employeeId || SERVER_ID
           });
           triggerUpdate();
         }}
       />
+
+      {/* Manager Override Authorization Dialog */}
+      {overrideModal?.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <Card className="w-full max-w-sm border border-amber-500/40 shadow-2xl bg-card">
+            <CardHeader className="text-center pt-6 pb-2">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-500 font-bold mb-2">
+                <ShieldAlert className="size-6" />
+              </div>
+              <h2 className="text-lg font-black tracking-tight text-foreground">Manager Override Required</h2>
+              <p className="text-xs text-muted-foreground">
+                Action: <strong className="text-foreground">{overrideModal.action}</strong>
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Reason: {overrideModal.reason}
+              </p>
+              <p className="text-[11px] font-mono text-muted-foreground mt-2">
+                Enter Manager PIN (Dev: <strong className="text-foreground">8888</strong>)
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4 pb-6">
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={overridePin}
+                onChange={(e) => setOverridePin(e.target.value.replace(/\D/g, ""))}
+                placeholder="••••"
+                className="h-12 w-full rounded-xl border bg-background text-center font-mono text-2xl tracking-[0.4em] focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                autoFocus
+              />
+              {overrideError && (
+                <p className="text-center text-xs font-bold text-destructive">{overrideError}</p>
+              )}
+              <div className="flex gap-2 pt-2">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => {
+                    setOverrideModal(null);
+                    setOverridePin("");
+                    setOverrideError("");
+                  }}
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                  onClick={async () => {
+                    setOverrideError("");
+                    const res = await createManagerOverride(
+                      overridePin,
+                      overrideModal.action,
+                      overrideModal.reason,
+                      "loc_downtown"
+                    );
+                    if (!res.success) {
+                      setOverrideError(res.error || "Invalid Manager PIN.");
+                      return;
+                    }
+
+                    if (
+                      overrideModal.action === "VOID_ITEM" &&
+                      overrideModal.sessionId &&
+                      overrideModal.itemId
+                    ) {
+                      await service.voidItem(
+                        overrideModal.sessionId,
+                        overrideModal.itemId,
+                        `${overrideModal.reason} (Approved by Manager: ${res.managerName})`,
+                        {
+                          actorType: "employee",
+                          actorId: staffSession?.employeeId || SERVER_ID
+                        }
+                      );
+                      triggerUpdate();
+                    }
+
+                    setOverrideModal(null);
+                    setOverridePin("");
+                    setOverrideError("");
+                  }}
+                >
+                  Authorize
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
+
