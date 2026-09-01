@@ -47,17 +47,26 @@ import { ConnectivityStatusBar } from "./offline/connectivity-status-bar";
 
 const RESTAURANT_ID = "sic_pizza_org";
 const LOCATION_ID = "loc_downtown";
-import {
-  authenticateStaffPin,
-  createManagerOverride,
-  DEMO_STAFF_DIRECTORY,
-  type StaffSessionPayload
-} from "@/lib/server/auth/staff-auth";
 import { useTableRealtime } from "@/lib/client/use-table-realtime";
 import { OutboxStatusBar } from "@/components/offline/outbox-status-bar";
 
+type StaffSession = {
+  employeeId: string;
+  displayName: string;
+  role: string;
+  locationId: string;
+  organizationId: string;
+  permissions: string[];
+};
 
-
+const DEMO_STAFF_DIRECTORY = [
+  { id: "emp_jordan", displayName: "Jordan Server", role: "server", pin: "0420" },
+  { id: "emp_manager", displayName: "Alex Manager", role: "manager", pin: "8888" },
+  { id: "emp_bartender", displayName: "Sam Bartender", role: "bartender", pin: "2468" },
+  { id: "emp_runner", displayName: "Casey Runner", role: "runner", pin: "1111" },
+  { id: "emp_expo", displayName: "Taylor Expo", role: "expo", pin: "3333" },
+  { id: "emp_kitchen", displayName: "Mario Kitchen", role: "kitchen", pin: "5555" }
+] as const;
 const SERVER_ID = "emp_jordan";
 const SERVER_NAME = "Jordan · Server";
 
@@ -86,7 +95,7 @@ export function PosDemo() {
     [selectedTenantId]
   );
   const [authenticated, setAuthenticated] = useState(false);
-  const [staffSession, setStaffSession] = useState<StaffSessionPayload | null>(null);
+  const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
   const [staffToken, setStaffToken] = useState<string | null>(null);
   const [pin, setPin] = useState("");
 
@@ -440,14 +449,32 @@ export function PosDemo() {
   async function login(pinToAuth?: string) {
     const inputPin = pinToAuth || pin;
     setError("");
-    const res = await authenticateStaffPin(inputPin, "loc_downtown");
-    if (!res.success || !res.payload) {
-      setError(res.error || "PIN not recognized. Use demo PINs: Jordan (0420), Alex (8888), Sam (2468).");
-      return;
+    try {
+      const response = await fetch("/api/staff/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: inputPin, locationId: "loc_downtown" })
+      });
+      const result = await response.json();
+
+      if (!response.ok || !result.token || !result.employee) {
+        setError(result.error || "PIN not recognized. Use demo PINs: Jordan (0420), Alex (8888), Sam (2468).");
+        return;
+      }
+
+      setStaffSession({
+        employeeId: result.employee.id,
+        displayName: result.employee.displayName,
+        role: result.employee.role,
+        locationId: result.employee.locationId,
+        organizationId: result.employee.organizationId,
+        permissions: result.permissions || []
+      });
+      setStaffToken(result.token);
+      setAuthenticated(true);
+    } catch {
+      setError("Unable to reach staff authentication. Check your connection and try again.");
     }
-    setStaffSession(res.payload);
-    setStaffToken(res.token || null);
-    setAuthenticated(true);
   }
 
 
@@ -1445,14 +1472,19 @@ export function PosDemo() {
                   className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold"
                   onClick={async () => {
                     setOverrideError("");
-                    const res = await createManagerOverride(
-                      overridePin,
-                      overrideModal.action,
-                      overrideModal.reason,
-                      "loc_downtown"
-                    );
-                    if (!res.success) {
-                      setOverrideError(res.error || "Invalid Manager PIN.");
+                    const response = await fetch("/api/staff/override", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        managerPin: overridePin,
+                        action: overrideModal.action,
+                        reason: overrideModal.reason,
+                        locationId: "loc_downtown"
+                      })
+                    });
+                    const result = await response.json();
+                    if (!response.ok || !result.overrideToken) {
+                      setOverrideError(result.error || "Invalid Manager PIN.");
                       return;
                     }
 
@@ -1464,7 +1496,7 @@ export function PosDemo() {
                       await service.voidItem(
                         overrideModal.sessionId,
                         overrideModal.itemId,
-                        `${overrideModal.reason} (Approved by Manager: ${res.managerName})`,
+                        `${overrideModal.reason} (Approved by Manager: ${result.managerName})`,
                         {
                           actorType: "employee",
                           actorId: staffSession?.employeeId || SERVER_ID
