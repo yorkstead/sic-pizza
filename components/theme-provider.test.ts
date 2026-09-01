@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect } from "bun:test";
+
 import { THEME_INIT_SCRIPT } from "./theme-provider";
 
 describe("Theme System & Script Verification", () => {

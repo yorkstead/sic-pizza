@@ -63,15 +63,21 @@ export const tables = pgTable("tables", {
 
 export const tableSessions = pgTable("table_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id),
+  locationId: uuid("location_id").references(() => locations.id),
   tableId: uuid("table_id").notNull().references(() => tables.id),
   diningAreaId: uuid("dining_area_id").references(() => diningAreas.id),
   servicePeriodId: uuid("service_period_id").references(() => servicePeriods.id),
   openedBy: uuid("opened_by").notNull().references(() => employees.id),
   assignedServerId: uuid("assigned_server_id").references(() => employees.id),
+  assistingEmployeeIds: jsonb("assisting_employee_ids").notNull().default([]),
+  manualStageOverride: text("manual_stage_override"),
   joinTokenHash: text("join_token_hash").notNull(),
+  version: integer("version").notNull().default(1),
   openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
   closedAt: timestamp("closed_at", { withTimezone: true })
 });
+
 
 export const diners = pgTable("diners", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -224,3 +230,30 @@ export const auditEvents = pgTable("audit_events", {
   idempotencyKey: text("idempotency_key"),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow()
 });
+
+export const outboxEvents = pgTable("outbox_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id),
+  locationId: uuid("location_id").references(() => locations.id),
+  sessionId: uuid("session_id").references(() => tableSessions.id),
+  eventType: text("event_type").notNull(),
+  payload: jsonb("payload").notNull(),
+  sequenceNumber: integer("sequence_number").notNull().default(0),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  processedAt: timestamp("processed_at", { withTimezone: true })
+});
+
+export const idempotencyRecords = pgTable("idempotency_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organizations.id),
+  locationId: uuid("location_id").references(() => locations.id),
+  principalId: text("principal_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  requestHash: text("request_hash").notNull(),
+  status: text("status").notNull().default("completed"),
+  responsePayload: jsonb("response_payload"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true })
+});
+

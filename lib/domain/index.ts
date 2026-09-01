@@ -20,6 +20,9 @@ export * from "./models/tenant";
 export * from "./services/session-repository";
 export * from "./services/session-service";
 export * from "./services/attention-service";
+
 export * from "./services/modifier-engine";
+export * from "./utils/id-utils";
 export * from "./payments";
 export * from "./voice";
+

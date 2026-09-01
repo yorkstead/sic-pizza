@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useTransition } from "react";
+import React, { createContext, useContext, useEffect, useState, useTransition, useSyncExternalStore } from "react";
+
 
 export type ThemeMode = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
@@ -14,6 +15,7 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 const STORAGE_KEY = "sic-theme";
+const emptySubscribe = () => () => {};
 
 function getSystemTheme(): ResolvedTheme {
   if (typeof window === "undefined") return "dark";
@@ -27,23 +29,23 @@ export function ThemeProvider({
   children: React.ReactNode;
   defaultTheme?: ThemeMode;
 }) {
-  const [theme, setThemeState] = useState<ThemeMode>(defaultTheme);
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("dark");
-  const [mounted, setMounted] = useState(false);
-  const [, startTransition] = useTransition();
-
-  // Load initial theme from localStorage on client
-  useEffect(() => {
+  const isMounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
+  const [theme, setThemeState] = useState<ThemeMode>(() => {
+    if (typeof window === "undefined") return defaultTheme;
     try {
       const savedTheme = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
       if (savedTheme === "system" || savedTheme === "light" || savedTheme === "dark") {
-        setThemeState(savedTheme);
+        return savedTheme;
       }
     } catch {
       // Ignore localStorage read errors
     }
-    setMounted(true);
-  }, []);
+    return defaultTheme;
+  });
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("dark");
+  const [, startTransition] = useTransition();
+
+
 
   // Update resolved theme and DOM classes when theme or system preference changes
   useEffect(() => {
@@ -92,10 +94,11 @@ export function ThemeProvider({
     <ThemeContext.Provider
       value={{
         theme,
-        resolvedTheme: mounted ? resolvedTheme : "dark",
+        resolvedTheme: isMounted ? resolvedTheme : "dark",
         setTheme,
       }}
     >
+
       {children}
     </ThemeContext.Provider>
   );
