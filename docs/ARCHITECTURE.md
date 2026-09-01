@@ -2,27 +2,30 @@
 
 ## 1. System Overview
 
-The **Restaurant Operating System** is an event-sourced, projection-driven hospitality platform designed around a single core principle:
+The **Restaurant Operating System** is an authoritative transactional, projection-driven hospitality platform designed around a single core principle:
 
 > **One live TableSession aggregate. Purpose-built projections for every stakeholder.**
 
-Unlike legacy POS software built as siloed cashier terminals with bolt-on KDS screens, the platform treats the dining table as a real-time collaborative state machine.
+Unlike legacy POS software built as siloed cashier terminals with bolt-on KDS screens, the platform treats the dining table as a real-time collaborative state machine. State mutations are committed transactionally with append-only audit events and a durable outbox for multi-device projection dispatch.
 
 ```mermaid
 graph TD
     A[Client Handheld / Terminal / Guest QR] -->|Idempotent Mutation Envelope| B(Client Mutation Queue)
     B -->|Transport Adapter| C(TableSessionService)
     C -->|Invariant Validation| D{Domain Aggregates}
-    D -->|Append Immutable Event| E[(Append-Only Event Store)]
-    D -->|Persist Snapshot| F[(PostgreSQL / In-Memory Session Repo)]
-    E -->|Event Stream| G[Projection Engine]
-    G --> H[Floor View Projection]
-    G --> I[Multi-Station KDS Projections]
-    G --> J[Universal Attention Queue]
-    G --> K[Manager Command Center]
-    G --> L[Service Analytics Engine]
-    G --> M[Guest Web Session]
+    D -->|Atomic Command Transaction| E[(PostgreSQL Transactional Store)]
+    E -->|Write Authoritative Snapshot| F[table_sessions / order_items / etc.]
+    E -->|Append Immutable Event| G[audit_events]
+    E -->|Enqueue Dispatch| H[outbox]
+    H -->|Durable Outbox Dispatch| I[Projection & Realtime Engine]
+    I --> J[Floor View Handhelds]
+    I --> K[Multi-Station KDS Projections]
+    I --> L[Universal Attention Queue]
+    I --> M[Manager Command Center]
+    I --> N[Service Analytics Engine]
+    I --> O[Guest Web Session]
 ```
+
 
 ---
 

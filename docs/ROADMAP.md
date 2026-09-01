@@ -61,9 +61,16 @@ gantt
 ## 3. Pilot Readiness Assessment
 
 ### Is the system ready for a live pilot?
-**The core domain and operational software foundation is 100% pilot-ready.**
+**No. While the pure in-memory domain models and unit tests are comprehensive, the runtime foundation currently runs as isolated browser-memory prototypes without transactional persistence, server authentication, or multi-device synchronization.**
 
-### What remains before live restaurant deployment?
-1. **Physical Card Terminal Driver**: Connect an EMV/NFC card reader (e.g. Stripe Terminal WisePOS E or BBPOS WisePad).
-2. **Thermal Receipt Printer Link**: Connect network ESC/POS thermal printers for kitchen chits/bar drops.
-3. **Hosted WebSocket Server**: Deploy WebSocket backend instance for multi-device sync across kitchen tablets and server handhelds.
+See [`docs/PRODUCTION_BASELINE.md`](PRODUCTION_BASELINE.md) for the complete implementation matrix and evidence-backed gaps.
+
+### What remains before a controlled pilot?
+1. **Server-Authoritative PostgreSQL Persistence**: Transactional repository with atomic command execution, outbox, and durable idempotency.
+2. **Staff Authentication & Authorization**: Secure server-side PIN/credential verification, RBAC, and session management.
+3. **Genuine Multi-Device Guest Access**: Shared session token exchange, server proposal review, and secure QR admission.
+4. **Realtime Multi-Device Sync & Recovery**: Resilient event distribution across handhelds, KDS screens, and guest web clients.
+5. **Durable Client Offline Queue**: Crash-resilient local mutation storage and server reconciliation.
+6. **Payment Provider Integration & Reconciliation**: Sandbox card reader integration, integer-cent ledger, and settlement.
+7. **Hardware Bridge & Pilot Release Gates**: Thermal printer and cash drawer bridge, operational checklists, and fallback procedures.
+
