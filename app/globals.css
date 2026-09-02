@@ -3,36 +3,46 @@
 @variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: oklch(0.975 0.002 90);
-  --foreground: oklch(0.12 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.12 0 0);
-  --primary: oklch(0.16 0 0);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.94 0 0);
-  --secondary-foreground: oklch(0.18 0 0);
-  --muted: oklch(0.955 0 0);
-  --muted-foreground: oklch(0.43 0 0);
-  --border: oklch(0.86 0 0);
+  --background: #f5f5dc;
+  --foreground: #2f2f2f;
+  --card: #fffef3;
+  --card-foreground: #2f2f2f;
+  --primary: #5c4033;
+  --primary-foreground: #fffef3;
+  --secondary: #e9e8ca;
+  --secondary-foreground: #2f2f2f;
+  --muted: #efefd8;
+  --muted-foreground: #625d55;
+  --border: #d5d2b6;
+  --brand-brown: #5c4033;
+  --brand-olive: #708238;
+  --signal-critical: #ff6347;
+  --signal-warning: #ffdb58;
+  --signal-success: #708238;
   --ring: var(--primary);
-  --danger: oklch(0.58 0.22 25);
-  --success: oklch(0.55 0.16 145);
+  --danger: var(--signal-critical);
+  --success: var(--signal-success);
   --radius: 0.75rem;
 }
 
 :root.dark,
 .dark {
-  --background: oklch(0.11 0 0);
-  --foreground: oklch(0.96 0 0);
-  --card: oklch(0.15 0 0);
+  --background: #242424;
+  --foreground: #f5f5dc;
+  --card: #2f2f2f;
   --card-foreground: var(--foreground);
-  --primary: oklch(0.96 0 0);
-  --primary-foreground: oklch(0.12 0 0);
-  --secondary: oklch(0.21 0 0);
+  --primary: #f5f5dc;
+  --primary-foreground: #2f2f2f;
+  --secondary: #3b342f;
   --secondary-foreground: var(--foreground);
-  --muted: oklch(0.19 0 0);
-  --muted-foreground: oklch(0.7 0 0);
-  --border: oklch(0.29 0 0);
+  --muted: #383532;
+  --muted-foreground: #c7c3ae;
+  --border: #514a43;
+  --brand-brown: #8a6858;
+  --brand-olive: #93a653;
+  --signal-critical: #ff735c;
+  --signal-warning: #ffdb58;
+  --signal-success: #93a653;
   --ring: var(--primary);
   --danger: oklch(0.62 0.21 25);
   --success: oklch(0.67 0.15 150);
@@ -54,6 +64,47 @@
   --color-ring: var(--ring);
   --color-danger: var(--danger);
   --color-success: var(--success);
+  --color-brand-brown: var(--brand-brown);
+  --color-brand-olive: var(--brand-olive);
+
+  /* The restaurant palette is global; vivid colors carry operational meaning only. */
+  --color-red-300: color-mix(in srgb, var(--signal-critical) 68%, white);
+  --color-red-400: color-mix(in srgb, var(--signal-critical) 84%, white);
+  --color-red-500: var(--signal-critical);
+  --color-red-600: color-mix(in srgb, var(--signal-critical) 84%, black);
+  --color-red-950: color-mix(in srgb, var(--signal-critical) 18%, transparent);
+  --color-rose-300: var(--color-red-300);
+  --color-rose-400: var(--color-red-400);
+  --color-rose-500: var(--color-red-500);
+  --color-rose-600: var(--color-red-600);
+  --color-amber-200: color-mix(in srgb, var(--signal-warning) 60%, white);
+  --color-amber-300: color-mix(in srgb, var(--signal-warning) 76%, white);
+  --color-amber-400: color-mix(in srgb, var(--signal-warning) 90%, white);
+  --color-amber-500: var(--signal-warning);
+  --color-amber-600: color-mix(in srgb, var(--signal-warning) 80%, var(--brand-brown));
+  --color-amber-700: color-mix(in srgb, var(--signal-warning) 65%, var(--brand-brown));
+  --color-amber-950: color-mix(in srgb, var(--signal-warning) 14%, transparent);
+  --color-yellow-300: var(--color-amber-300);
+  --color-yellow-500: var(--signal-warning);
+  --color-emerald-300: color-mix(in srgb, var(--signal-success) 68%, white);
+  --color-emerald-400: color-mix(in srgb, var(--signal-success) 84%, white);
+  --color-emerald-500: var(--signal-success);
+  --color-emerald-600: color-mix(in srgb, var(--signal-success) 84%, black);
+  --color-emerald-700: color-mix(in srgb, var(--signal-success) 72%, black);
+  --color-emerald-950: color-mix(in srgb, var(--signal-success) 14%, transparent);
+  --color-green-500: var(--signal-success);
+
+  /* Former decorative blues and purples resolve to the brand accents. */
+  --color-blue-300: color-mix(in srgb, var(--brand-olive) 68%, white);
+  --color-blue-400: var(--brand-olive);
+  --color-blue-500: var(--brand-olive);
+  --color-cyan-400: var(--brand-olive);
+  --color-cyan-500: var(--brand-olive);
+  --color-purple-300: color-mix(in srgb, var(--brand-brown) 58%, white);
+  --color-purple-400: var(--brand-brown);
+  --color-purple-500: var(--brand-brown);
+  --color-purple-600: color-mix(in srgb, var(--brand-brown) 84%, black);
+  --color-indigo-400: var(--brand-brown);
   --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
 }

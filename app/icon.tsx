@@ -16,7 +16,7 @@ export default function Icon() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#171412",
+          background: "#2f2f2f",
           borderRadius: "110px",
         }}
       >
@@ -27,7 +27,7 @@ export default function Icon() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            background: "#ea580c",
+            background: "#5c4033",
             borderRadius: "72px",
             transform: "rotate(-4deg)",
             boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
@@ -38,7 +38,7 @@ export default function Icon() {
             height="220"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="#ffffff"
+            stroke="#f5f5dc"
             strokeWidth="2.2"
             strokeLinecap="round"
             strokeLinejoin="round"

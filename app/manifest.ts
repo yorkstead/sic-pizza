@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Collaborative tableside ordering and restaurant POS.",
     start_url: "/",
     display: "standalone",
-    background_color: "#171412",
-    theme_color: "#ea580c",
+    background_color: "#f5f5dc",
+    theme_color: "#5c4033",
     icons: [
       {
         src: "/icon",
