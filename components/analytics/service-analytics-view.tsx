@@ -43,7 +43,7 @@ export function ServiceAnalyticsView({ sessions }: ServiceAnalyticsViewProps) {
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 sm:p-6 shadow-sm md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 sm:p-6 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <span className="flex size-2 rounded-full bg-cyan-500 animate-pulse" />
@@ -270,7 +270,7 @@ export function ServiceAnalyticsView({ sessions }: ServiceAnalyticsViewProps) {
               key={st.stationId}
               className={`p-4 ${
                 st.bottleneckScore === "bottleneck"
-                  ? "border-rose-500/50 bg-rose-500/5 shadow-xs"
+                  ? "border-rose-500/50 bg-rose-500/10"
                   : st.bottleneckScore === "moderate"
                   ? "border-amber-500/40 bg-amber-500/5"
                   : ""

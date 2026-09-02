@@ -206,7 +206,7 @@ export function TableSessionView({
   return (
     <div className="mx-auto max-w-4xl space-y-4 pb-20">
       {/* Top Header Bar */}
-      <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button
             variant="secondary"
@@ -320,7 +320,7 @@ export function TableSessionView({
         if (pacing.courses.length === 0) return null;
 
         return (
-          <div className="rounded-2xl border bg-card p-3.5 shadow-sm space-y-3">
+          <div className="rounded-2xl border bg-card p-3.5 space-y-3">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-primary flex items-center gap-1">
@@ -357,7 +357,7 @@ export function TableSessionView({
                         : isInPrep
                         ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
                         : cs.shouldFireNow
-                        ? "bg-primary/10 border-primary text-foreground shadow-xs animate-pulse"
+                        ? "bg-primary/10 border-primary text-foreground animate-pulse"
                         : "bg-card border-border text-foreground"
                     }`}
                   >
@@ -402,7 +402,7 @@ export function TableSessionView({
       {primaryAction && (
         <Button
           size="lg"
-          className="w-full text-base shadow-md transition-transform active:scale-[0.99]"
+          className="w-full text-base transition-transform active:scale-[0.99]"
           onClick={primaryAction.onClick}
         >
           <primaryAction.icon className="size-5" />

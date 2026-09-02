@@ -202,9 +202,9 @@ export function FloorView({
                     onOpenNewTable(t.tableId);
                   }
                 }}
-                className={`group relative cursor-pointer overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${
+                className={`group relative cursor-pointer overflow-hidden transition-colors duration-200 hover:bg-secondary/40 ${
                   hasAttention
-                    ? "border-red-500/50 bg-red-950/10 shadow-[0_0_15px_rgba(239,68,68,0.15)]"
+                    ? "border-red-500/50 bg-red-500/10"
                     : isOccupied
                     ? "border-border bg-card hover:border-primary/50"
                     : "border-border/60 bg-card/40 opacity-75 hover:opacity-100"

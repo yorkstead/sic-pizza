@@ -175,9 +175,9 @@ export function GuestSessionApp({
   return (
     <main className="mx-auto min-h-screen max-w-lg p-3 sm:p-4 pb-24 space-y-4">
       {/* Header Bar */}
-      <header className="flex items-center justify-between rounded-2xl border bg-card p-3.5 shadow-sm">
+      <header className="flex items-center justify-between rounded-2xl border bg-card p-3.5">
         <div className="flex items-center gap-2.5">
-          <div className="grid size-9 rotate-[-4deg] place-items-center rounded-xl bg-primary font-black text-xs text-primary-foreground shadow-xs">
+          <div className="grid size-9 rotate-[-4deg] place-items-center rounded-xl bg-primary font-black text-xs text-primary-foreground">
             <Pizza className="size-5 text-primary-foreground" />
           </div>
           <div>
@@ -427,7 +427,7 @@ export function GuestSessionApp({
                       onClick={() => setSelectedTipPercent(pct)}
                       className={`py-1.5 rounded-lg border transition ${
                         selectedTipPercent === pct
-                          ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                          ? "bg-primary text-primary-foreground border-primary"
                           : "bg-secondary/60 text-secondary-foreground"
                       }`}
                     >

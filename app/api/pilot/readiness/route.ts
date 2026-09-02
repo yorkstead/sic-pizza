@@ -4,8 +4,7 @@ import { authorizeStaffAction } from "@/lib/server/auth/staff-auth";
 
 export async function GET(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    const staffAuth = await authorizeStaffAction(authHeader, "ANALYTICS_VIEW");
+    const staffAuth = await authorizeStaffAction(req, "ANALYTICS_VIEW");
     if (!staffAuth.authorized) {
       return NextResponse.json(
         { error: "Unauthorized: Analytics or Manager permission required to run pilot audit." },

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const orderStatus = pgEnum("order_status", ["draft", "submitted", "making", "ready", "served", "paid"]);
 export const itemStatus = pgEnum("item_status", ["draft", "proposed", "confirmed", "held", "fired", "preparing", "ready", "delivered", "voided"]);
@@ -52,6 +52,50 @@ export const employees = pgTable("employees", {
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
+
+export const staffDevices = pgTable("staff_devices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  locationId: uuid("location_id").notNull().references(() => locations.id),
+  deviceTokenHash: text("device_token_hash").notNull(),
+  label: text("label").notNull().default("POS device"),
+  active: boolean("active").notNull().default(true),
+  enrolledAt: timestamp("enrolled_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true })
+}, (table) => [
+  uniqueIndex("staff_devices_token_hash_unique").on(table.deviceTokenHash),
+  index("staff_devices_location_active_idx").on(table.locationId, table.active)
+]);
+
+export const staffSessions = pgTable("staff_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  employeeId: uuid("employee_id").notNull().references(() => employees.id),
+  locationId: uuid("location_id").notNull().references(() => locations.id),
+  deviceId: uuid("device_id").notNull().references(() => staffDevices.id),
+  sessionTokenHash: text("session_token_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true })
+}, (table) => [
+  uniqueIndex("staff_sessions_token_hash_unique").on(table.sessionTokenHash),
+  index("staff_sessions_employee_active_idx").on(table.employeeId, table.expiresAt)
+]);
+
+export const staffLoginAttempts = pgTable("staff_login_attempts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  locationId: uuid("location_id").notNull().references(() => locations.id),
+  employeeId: uuid("employee_id").references(() => employees.id),
+  deviceFingerprintHash: text("device_fingerprint_hash").notNull(),
+  successful: boolean("successful").notNull().default(false),
+  attemptedAt: timestamp("attempted_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  index("staff_login_attempts_throttle_idx").on(
+    table.locationId,
+    table.deviceFingerprintHash,
+    table.attemptedAt
+  )
+]);
 
 export const tables = pgTable("tables", {
   id: uuid("id").primaryKey().defaultRandom(),

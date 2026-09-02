@@ -36,13 +36,13 @@ const SEVERITY_STYLES: Record<
 > = {
   URGENT: {
     badge: "bg-red-500 text-white font-black animate-pulse",
-    border: "border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.25)]",
+    border: "border-red-500",
     bg: "bg-red-500/10",
     icon: Flame
   },
   HIGH: {
     badge: "bg-orange-500 text-white font-bold",
-    border: "border-orange-500/80 shadow-[0_0_15px_rgba(249,115,22,0.15)]",
+    border: "border-orange-500/80",
     bg: "bg-orange-500/10",
     icon: AlertTriangle
   },
@@ -292,7 +292,7 @@ export function DoThisNext({
                     <div className="flex flex-row items-center gap-2 pt-2 sm:flex-col sm:items-end sm:pt-0 shrink-0">
                       <Button
                         size="default"
-                        className={`h-10 px-4 font-black shadow-md flex items-center gap-2 text-xs ${
+                        className={`h-10 px-4 font-black flex items-center gap-2 text-xs ${
                           item.severity === "URGENT"
                             ? "bg-red-600 hover:bg-red-500 text-white"
                             : item.severity === "HIGH"
@@ -334,7 +334,7 @@ export function DoThisNext({
       {/* Config Drawer / Modal */}
       {showConfigModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs">
-          <Card className="w-full max-w-lg overflow-hidden border-2 border-primary/40 shadow-2xl">
+          <Card className="w-full max-w-lg overflow-hidden border-2 border-primary/40">
             <div className="flex items-center justify-between border-b px-5 py-4 bg-muted/40">
               <div className="flex items-center gap-2">
                 <Sliders className="size-4 text-primary" />

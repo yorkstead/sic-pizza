@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import { generateGuestJoinToken } from "../../lib/server/auth/guest-auth";
+import { hashPin, STAFF_SESSION_COOKIE } from "../../lib/server/auth/staff-auth";
 import { ensureUuid } from "../../lib/domain/utils/id-utils";
 
 const port = 4317;
@@ -129,10 +130,11 @@ describe("persisted staff and guest API workflow", () => {
        VALUES ($1, $2, 'Synthetic Main Dining', 'SYNTH')`,
       [diningAreaId, locationId]
     );
+    const staffPinHash = await hashPin("0420", "synthetic-workflow-salt");
     await pool.query(
       `INSERT INTO employees (id, location_id, display_name, pin_hash, role)
-       VALUES ($1, $2, 'Jordan Synthetic Server', 'not-a-live-pin', 'server')`,
-      [employeeId, locationId]
+       VALUES ($1, $2, 'Jordan Synthetic Server', $3, 'server')`,
+      [employeeId, locationId, staffPinHash]
     );
     await pool.query(
       `INSERT INTO tables (id, location_id, dining_area_id, label, seats)
@@ -165,6 +167,9 @@ describe("persisted staff and guest API workflow", () => {
     );
     await pool.query("DELETE FROM table_sessions WHERE organization_id = $1", [organizationId]);
     await pool.query("DELETE FROM tables WHERE location_id = $1", [locationId]);
+    await pool.query("DELETE FROM staff_login_attempts WHERE location_id = $1", [locationId]);
+    await pool.query("DELETE FROM staff_sessions WHERE location_id = $1", [locationId]);
+    await pool.query("DELETE FROM staff_devices WHERE location_id = $1", [locationId]);
     await pool.query("DELETE FROM employees WHERE location_id = $1", [locationId]);
     await pool.query("DELETE FROM dining_areas WHERE location_id = $1", [locationId]);
     await pool.query("DELETE FROM locations WHERE id = $1", [locationId]);
@@ -173,17 +178,20 @@ describe("persisted staff and guest API workflow", () => {
   });
 
   it("persists a staff-opened table through guest activity, kitchen firing, and restart", async () => {
-    const staffAuth = await requestJson<{
-      token: string;
-      employee: { organizationId: string; locationId: string };
-    }>("/api/staff/auth", {
+    const loginResponse = await fetch(`${baseUrl}/api/staff/auth`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pin: "0420", locationId: "loc_downtown", employeeId: "emp_jordan" })
     });
+    expect(loginResponse.status).toBe(200);
+    const staffAuth = await loginResponse.json() as { token?: string; employee: { organizationId: string; locationId: string } };
+    expect(staffAuth.token).toBeUndefined();
+    const setCookie = loginResponse.headers.get("set-cookie") ?? "";
+    const sessionCookie = setCookie.match(new RegExp(`${STAFF_SESSION_COOKIE}=([^;,]+)`));
+    expect(sessionCookie?.[1]).toBeDefined();
     const staffHeaders = {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${staffAuth.token}`
+      Cookie: `${STAFF_SESSION_COOKIE}=${sessionCookie![1]}`
     };
 
     const opened = await requestJson<{ session: { id: string; tableId: string } }>(
@@ -266,7 +274,7 @@ describe("persisted staff and guest API workflow", () => {
 
     const afterRestart = await requestJson<{
       sessions: Array<{ id: string; tickets: Array<{ id: string }> }>;
-    }>("/api/staff/sessions", { headers: { Authorization: `Bearer ${staffAuth.token}` } });
+    }>("/api/staff/sessions", { headers: staffHeaders });
     const persisted = afterRestart.sessions.find((session) => session.id === opened.session.id);
     expect(persisted?.tickets).toHaveLength(1);
     expect(persisted?.tickets[0].id).toBe(fired.result.tickets[0].id);
@@ -284,5 +292,8 @@ describe("persisted staff and guest API workflow", () => {
     });
     expect(retried.result.tickets).toHaveLength(1);
     expect(retried.result.tickets[0].id).toBe(fired.result.tickets[0].id);
+
+    await requestJson("/api/staff/auth", { method: "DELETE", headers: staffHeaders });
+    await requestJson("/api/staff/sessions", { headers: staffHeaders }, 403);
   });
 });

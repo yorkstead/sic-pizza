@@ -258,7 +258,7 @@ export function AddItemDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-xs sm:items-center sm:p-4">
-      <div className="flex max-h-[92vh] w-full max-w-xl flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:rounded-2xl overflow-hidden">
+      <div className="flex max-h-[92vh] w-full max-w-xl flex-col rounded-t-2xl border border-border bg-card sm:rounded-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b px-5 py-3.5 bg-background">
           <div>
@@ -364,7 +364,7 @@ export function AddItemDialog({
               key={t}
               onClick={() => setTab(t)}
               className={`rounded-md py-1.5 transition ${
-                tab === t ? "bg-background text-foreground shadow-xs font-bold" : "text-muted-foreground"
+                tab === t ? "bg-background text-foreground font-bold" : "text-muted-foreground"
               }`}
             >
               {t}

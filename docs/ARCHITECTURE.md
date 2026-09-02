@@ -76,3 +76,14 @@ An order is not a flat paper ticket. It projects into station-specific queues:
   - Permitted offline: Item entry, course firing, guest requests, section transfers.
   - Prohibited offline: Live gateway payment capture, session closure.
 - **Transport Abstraction**: Generic `TransportAdapter` interface decoupling domain logic from specific WebSocket/SSE/Server Action transports.
+
+---
+
+## 6. Staff Authentication Boundary
+
+- Staff identities and salted scrypt PIN hashes are stored in PostgreSQL; application code contains no staff directory or plaintext demo PINs.
+- Successful PIN entry enrolls or reuses a location-scoped device record and creates an opaque, revocable eight-hour session. Only SHA-256 token digests are stored.
+- Browsers receive session and device credentials as `HttpOnly`, `SameSite=Strict` cookies. Staff credentials are not returned in JSON, placed in URLs, or written to browser storage.
+- Every staff route resolves the employee, location, organization, active device, expiration, and revocation state server-side before checking role permissions.
+- Failed PIN attempts are recorded and limited to five per device fingerprint and location in fifteen minutes. Logout revokes the server record before clearing the cookie.
+- Schema migration and synthetic credential enrollment must be completed in staging before this boundary can be released. Production PINs or employee exports must never be committed or seeded from demo data.

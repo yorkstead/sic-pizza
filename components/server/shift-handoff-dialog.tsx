@@ -84,7 +84,7 @@ export function ShiftHandoffDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-xs animate-in fade-in">
-      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col rounded-2xl border bg-card shadow-2xl overflow-hidden">
+      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col rounded-2xl border bg-card overflow-hidden">
         {/* Header */}
         <header className="flex items-center justify-between border-b p-4 sm:p-5 bg-secondary/30">
           <div className="flex items-center gap-3">
@@ -163,7 +163,7 @@ export function ShiftHandoffDialog({
                     onClick={() => toggleSelectTable(table.sessionId)}
                     className={`cursor-pointer rounded-xl border p-3.5 transition ${
                       isSelected
-                        ? "border-primary bg-primary/5 shadow-xs"
+                        ? "border-primary bg-primary/10"
                         : "border-border/60 bg-card hover:bg-secondary/30"
                     }`}
                   >

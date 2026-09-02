@@ -132,7 +132,7 @@ export function MultiStationKDS({
               type="button"
               onClick={() => setStatusFilter("active")}
               className={`px-3 py-1 rounded-md transition font-bold ${
-                statusFilter === "active" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
+                statusFilter === "active" ? "bg-background text-foreground" : "text-muted-foreground"
               }`}
             >
               Active
@@ -141,7 +141,7 @@ export function MultiStationKDS({
               type="button"
               onClick={() => setStatusFilter("all")}
               className={`px-3 py-1 rounded-md transition font-bold ${
-                statusFilter === "all" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
+                statusFilter === "all" ? "bg-background text-foreground" : "text-muted-foreground"
               }`}
             >
               All
@@ -157,7 +157,7 @@ export function MultiStationKDS({
           onClick={() => setSelectedStation("all")}
           className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 font-bold transition shrink-0 ${
             selectedStation === "all"
-              ? "bg-primary text-primary-foreground shadow-sm"
+              ? "bg-primary text-primary-foreground"
               : "bg-secondary/60 text-secondary-foreground hover:bg-secondary"
           }`}
         >
@@ -170,7 +170,7 @@ export function MultiStationKDS({
           onClick={() => setSelectedStation("expo")}
           className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 font-bold transition shrink-0 ${
             selectedStation === "expo"
-              ? "bg-purple-600 text-white shadow-sm"
+              ? "bg-purple-600 text-white"
               : "bg-purple-500/10 text-purple-300 border border-purple-500/30 hover:bg-purple-500/20"
           }`}
         >
@@ -189,7 +189,7 @@ export function MultiStationKDS({
               onClick={() => setSelectedStation(station.id)}
               className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 font-bold transition shrink-0 ${
                 isSelected
-                  ? "bg-foreground text-background shadow-sm"
+                  ? "bg-foreground text-background"
                   : "bg-secondary/60 text-secondary-foreground hover:bg-secondary"
               }`}
             >
@@ -294,7 +294,7 @@ export function MultiStationKDS({
                     key={`${proj.sessionId}:${proj.course}`}
                     className={`overflow-hidden border-2 ${
                       proj.isAllStationsReady
-                        ? "border-emerald-500/60 bg-emerald-500/5 shadow-md shadow-emerald-500/10"
+                        ? "border-emerald-500/60 bg-emerald-500/10"
                         : isLate
                         ? "border-rose-500/60 bg-rose-500/5"
                         : "border-border bg-card"

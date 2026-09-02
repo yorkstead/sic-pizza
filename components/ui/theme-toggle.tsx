@@ -49,7 +49,7 @@ export function ThemeToggle({
         type="button"
         onClick={cycleTheme}
         className={cn(
-          "inline-flex items-center justify-center rounded-lg border bg-card p-2 text-foreground shadow-xs transition hover:bg-secondary active:scale-95 focus-visible:outline-2 focus-visible:outline-primary",
+          "inline-flex items-center justify-center rounded-lg border bg-card p-2 text-foreground transition hover:bg-secondary active:scale-95 focus-visible:outline-2 focus-visible:outline-primary",
           className
         )}
         title={`Current theme: ${theme} (${resolvedTheme}). Click to cycle.`}
@@ -95,7 +95,7 @@ export function ThemeToggle({
             className={cn(
               "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold transition-all",
               isSelected
-                ? "bg-primary text-primary-foreground shadow-xs font-extrabold"
+                ? "bg-primary text-primary-foreground font-extrabold"
                 : "hover:bg-secondary hover:text-foreground"
             )}
             title={`Set theme to ${opt.label}${opt.mode === "system" ? ` (Currently ${resolvedTheme})` : ""}`}

@@ -71,7 +71,7 @@ export function SplitItemDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6">
         <div className="flex items-center justify-between border-b pb-3">
           <div className="flex items-center gap-2">
             <Users className="size-5 text-primary" />
@@ -98,7 +98,7 @@ export function SplitItemDialog({
               if (selectedDinerIds.length > 1) setSelectedDinerIds([selectedDinerIds[0]]);
             }}
             className={`rounded-lg py-2 transition ${
-              mode === "single" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
+              mode === "single" ? "bg-background text-foreground" : "text-muted-foreground"
             }`}
           >
             Single Diner
@@ -107,7 +107,7 @@ export function SplitItemDialog({
             type="button"
             onClick={() => setMode("shared_diners")}
             className={`rounded-lg py-2 transition ${
-              mode === "shared_diners" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
+              mode === "shared_diners" ? "bg-background text-foreground" : "text-muted-foreground"
             }`}
           >
             Split Diners
@@ -116,7 +116,7 @@ export function SplitItemDialog({
             type="button"
             onClick={() => setMode("whole_table")}
             className={`rounded-lg py-2 transition ${
-              mode === "whole_table" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
+              mode === "whole_table" ? "bg-background text-foreground" : "text-muted-foreground"
             }`}
           >
             Whole Table

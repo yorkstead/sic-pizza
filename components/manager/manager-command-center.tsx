@@ -86,7 +86,7 @@ export function ManagerCommandCenter({
   return (
     <div className="space-y-6">
       {/* Top Command Banner */}
-      <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 sm:p-6 shadow-sm md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 sm:p-6 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <span className="flex size-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -346,9 +346,9 @@ export function ManagerCommandCenter({
                   key={item.id}
                   className={`rounded-2xl border p-4 transition space-y-3 ${
                     isCrit
-                      ? "border-rose-500/60 bg-rose-500/10 shadow-xs"
+                      ? "border-rose-500/60 bg-rose-500/10"
                       : isUrg
-                      ? "border-amber-500/60 bg-amber-500/10 shadow-xs"
+                      ? "border-amber-500/60 bg-amber-500/10"
                       : "border-border bg-card"
                   }`}
                 >
@@ -454,7 +454,7 @@ export function ManagerCommandCenter({
                 key={st.stationId}
                 className={`p-4 ${
                   st.isBottleneck
-                    ? "border-rose-500/60 bg-rose-500/5 shadow-xs"
+                    ? "border-rose-500/60 bg-rose-500/10"
                     : st.delayedCount > 0
                     ? "border-amber-500/50 bg-amber-500/5"
                     : ""
@@ -536,7 +536,7 @@ export function ManagerCommandCenter({
                 key={tbl.sessionId}
                 onClick={() => onSelectTable(tbl.tableId)}
                 className={`p-3.5 cursor-pointer hover:border-primary transition ${
-                  tbl.hasAlert ? "border-rose-500/50 bg-rose-500/5 shadow-xs" : ""
+                  tbl.hasAlert ? "border-rose-500/50 bg-rose-500/10" : ""
                 }`}
               >
                 <div className="flex items-start justify-between gap-1">

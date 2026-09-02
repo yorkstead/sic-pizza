@@ -356,7 +356,7 @@ export function AttentionQueue({
                 key={req.id}
                 className={`overflow-hidden border-2 transition ${
                   escalation === "ESCALATED"
-                    ? "border-destructive/80 bg-destructive/10 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+                    ? "border-destructive/80 bg-destructive/10"
                     : escalation === "OVERDUE"
                     ? "border-amber-500/70 bg-amber-950/15"
                     : req.priority === "URGENT"
@@ -547,7 +547,7 @@ export function AttentionQueue({
       {/* Cancellation Reason Modal */}
       {cancellingRequestId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-2xl border bg-card p-5 shadow-2xl space-y-4">
+          <div className="w-full max-w-md rounded-2xl border bg-card p-5 space-y-4">
             <div className="flex items-center justify-between border-b pb-2">
               <h3 className="font-bold text-foreground text-base">Cancel Request</h3>
               <button

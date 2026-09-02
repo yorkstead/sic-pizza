@@ -14,19 +14,12 @@ export async function GET(req: NextRequest) {
   const queryToken = searchParams.get("token");
   const authHeader = req.headers.get("authorization") || (queryToken ? `Bearer ${queryToken}` : null);
 
-  if (!authHeader) {
-    return new Response(JSON.stringify({ error: "Missing authorization token." }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-
   // Authorize as staff or guest
   let isStaff = false;
   let isGuest = false;
   let guestSessionId: string | undefined;
 
-  const staffAuth = await authorizeStaffAction(authHeader, "TABLE_VIEW");
+  const staffAuth = await authorizeStaffAction(req, "TABLE_VIEW");
 
   if (staffAuth.authorized) {
     isStaff = true;

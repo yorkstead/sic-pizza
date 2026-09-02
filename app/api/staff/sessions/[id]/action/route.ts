@@ -9,7 +9,6 @@ export async function POST(
 ) {
   try {
     const { id: sessionId } = await context.params;
-    const authHeader = req.headers.get("authorization");
     const overrideHeader = req.headers.get("x-manager-override-token");
 
     const body = await req.json();
@@ -31,7 +30,7 @@ export async function POST(
       return NextResponse.json({ error: `Unknown staff action: ${action}` }, { status: 400 });
     }
 
-    const auth = await authorizeStaffAction(authHeader, requiredPermission, overrideHeader);
+    const auth = await authorizeStaffAction(req, requiredPermission, overrideHeader);
     if (!auth.authorized || !auth.session) {
       return NextResponse.json({ error: auth.error || "Permission Denied" }, { status: 403 });
     }

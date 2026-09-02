@@ -14,8 +14,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const authHeader = req.headers.get("Authorization");
-    const staffAuth = await authorizeStaffAction(authHeader, "TABLE_VIEW");
+    const staffAuth = await authorizeStaffAction(req, "TABLE_VIEW");
     if (!staffAuth.authorized) {
       return NextResponse.json({ error: "Unauthorized: Staff access required to print." }, { status: 403 });
     }

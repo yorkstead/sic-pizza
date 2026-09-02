@@ -43,11 +43,11 @@ export function OutboxStatusBar() {
       {/* Top Floating Offline & Outbox Banner */}
       <div className={`sticky top-0 z-40 flex items-center justify-between px-4 py-2 text-xs font-bold transition-colors ${
         !isOnline
-          ? "bg-amber-600 text-white shadow-md"
+          ? "bg-amber-600 text-white"
           : rejectedCount > 0
-            ? "bg-destructive text-destructive-foreground shadow-md"
+            ? "bg-destructive text-destructive-foreground"
             : unknownCount > 0
-              ? "bg-amber-500 text-amber-950 shadow-md"
+              ? "bg-amber-500 text-amber-950"
               : "bg-primary/90 text-primary-foreground backdrop-blur-xs"
       }`}>
         <div className="flex items-center gap-2">
@@ -93,7 +93,7 @@ export function OutboxStatusBar() {
       {/* Outbox & Conflict Resolution Dialog */}
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <Card className="w-full max-w-lg border border-border shadow-2xl bg-card max-h-[85vh] flex flex-col">
+          <Card className="w-full max-w-lg border border-border bg-card max-h-[85vh] flex flex-col">
             <CardHeader className="pt-5 pb-3 border-b flex flex-row items-center justify-between">
               <div>
                 <h2 className="text-base font-black text-foreground flex items-center gap-2">

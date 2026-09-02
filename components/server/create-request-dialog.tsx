@@ -119,7 +119,7 @@ export function CreateRequestDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
-      <div className="w-full max-w-lg rounded-2xl border bg-card p-5 shadow-2xl space-y-4">
+      <div className="w-full max-w-lg rounded-2xl border bg-card p-5 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between border-b pb-3">
           <div>

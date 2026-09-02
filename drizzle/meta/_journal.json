@@ -29,6 +29,13 @@
       "when": 1788262673781,
       "tag": "0003_premium_sentinel",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788304383288,
+      "tag": "0004_flippant_shaman",
+      "breakpoints": true
     }
   ]
 }

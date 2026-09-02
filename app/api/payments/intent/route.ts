@@ -16,8 +16,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Authenticate guest or staff
-    const authHeader = req.headers.get("Authorization");
-    const staffAuth = await authorizeStaffAction(authHeader, "TABLE_VIEW");
+    const staffAuth = await authorizeStaffAction(req, "TABLE_VIEW");
+    const authHeader = req.headers.get("authorization");
     const guestAuth = await authorizeGuestSession(authHeader);
 
     if (!staffAuth.authorized && (!guestAuth.authorized || guestAuth.guest?.sessionId !== sessionId)) {

@@ -96,7 +96,7 @@ export function PosDemo() {
   );
   const [authenticated, setAuthenticated] = useState(false);
   const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
-  const [staffToken, setStaffToken] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [pin, setPin] = useState("");
 
   const [error, setError] = useState("");
@@ -116,6 +116,40 @@ export function PosDemo() {
   } | null>(null);
   const [overridePin, setOverridePin] = useState("");
   const [overrideError, setOverrideError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreStaffSession() {
+      try {
+        const response = await fetch("/api/staff/auth");
+        const result = await response.json();
+
+        if (!response.ok || !result.employee || cancelled) {
+          return;
+        }
+
+        setStaffSession({
+          employeeId: result.employee.id,
+          displayName: result.employee.displayName,
+          role: result.employee.role,
+          locationId: result.employee.locationId,
+          organizationId: result.employee.organizationId,
+          permissions: result.permissions || []
+        });
+        setAuthenticated(true);
+      } catch {
+        // A missing or expired cookie is an ordinary signed-out state.
+      } finally {
+        if (!cancelled) setAuthReady(true);
+      }
+    }
+
+    restoreStaffSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Repository & Domain Service instances
   const repo = useMemo(() => new InMemoryTableSessionRepository(), []);
@@ -436,8 +470,7 @@ export function PosDemo() {
   // Realtime Floor Synchronization
   useTableRealtime({
     locationId: "loc_downtown",
-    token: staffToken,
-    enabled: Boolean(authenticated && staffToken),
+    enabled: authenticated,
     onEvent: () => {
       triggerUpdate();
     },
@@ -457,8 +490,8 @@ export function PosDemo() {
       });
       const result = await response.json();
 
-      if (!response.ok || !result.token || !result.employee) {
-        setError(result.error || "PIN not recognized. Use demo PINs: Jordan (0420), Alex (8888), Sam (2468).");
+      if (!response.ok || !result.employee) {
+        setError(result.error || "PIN not recognized for this location.");
         return;
       }
 
@@ -470,7 +503,6 @@ export function PosDemo() {
         organizationId: result.employee.organizationId,
         permissions: result.permissions || []
       });
-      setStaffToken(result.token);
       setAuthenticated(true);
     } catch {
       setError("Unable to reach staff authentication. Check your connection and try again.");
@@ -478,16 +510,31 @@ export function PosDemo() {
   }
 
 
+  async function logout() {
+    await fetch("/api/staff/auth", { method: "DELETE" }).catch(() => undefined);
+    setAuthenticated(false);
+    setStaffSession(null);
+    setPin("");
+  }
+
+  if (!authReady) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-background text-sm font-bold text-muted-foreground">
+        Restoring staff session…
+      </main>
+    );
+  }
+
   if (!authenticated) {
     return (
       <main className="relative grid min-h-screen place-items-center p-4 bg-background">
         <div className="absolute top-4 right-4">
           <ThemeToggle size="sm" />
         </div>
-        <Card className="w-full max-w-sm overflow-hidden border border-border shadow-2xl">
+        <Card className="w-full max-w-sm overflow-hidden border border-border">
           <div className="h-1.5 bg-primary" />
           <CardHeader className="text-center pt-8 pb-4">
-            <div className={`mx-auto flex size-12 items-center justify-center rounded-2xl ${currentTenant.theme.badgeClass} font-black text-xl rotate-[-4deg] shadow-md`}>
+            <div className={`mx-auto flex size-12 items-center justify-center rounded-2xl ${currentTenant.theme.badgeClass} font-black text-xl rotate-[-4deg]`}>
               {currentTenant.tenantId === "sic_pizza_tenant" ? (
                 <Pizza className="size-6 text-primary-foreground" />
               ) : (
@@ -530,8 +577,14 @@ export function PosDemo() {
               </label>
               <input
                 id="server-pin"
-                type="password"
+                type="text"
                 inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
+                name="staff-pin-code"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
                 maxLength={4}
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
@@ -589,7 +642,7 @@ export function PosDemo() {
       {/* Desktop Sidebar */}
       <aside className="hidden border-r p-5 lg:flex lg:flex-col bg-card/40">
         <div className="flex items-center gap-2.5">
-          <div className={`grid size-9 rotate-[-4deg] place-items-center rounded-lg ${currentTenant.theme.badgeClass} font-black text-xs shadow-xs`}>
+          <div className={`grid size-9 rotate-[-4deg] place-items-center rounded-lg ${currentTenant.theme.badgeClass} font-black text-xs`}>
             {currentTenant.tenantId === "sic_pizza_tenant" ? (
               <Pizza className="size-5 text-primary-foreground" />
             ) : (
@@ -755,7 +808,7 @@ export function PosDemo() {
               variant="ghost"
               size="icon"
               aria-label="Sign out"
-              onClick={() => setAuthenticated(false)}
+              onClick={logout}
             >
               <LogOut className="size-4 text-muted-foreground hover:text-foreground" />
             </Button>
@@ -1210,7 +1263,7 @@ export function PosDemo() {
                   <Link
                     href="/join/SIC-11"
                     target="_blank"
-                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground shadow-md hover:brightness-110"
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:brightness-110"
                   >
                     <QrCode className="size-4" />
                     Open Guest View in New Tab
@@ -1425,7 +1478,7 @@ export function PosDemo() {
       {/* Manager Override Authorization Dialog */}
       {overrideModal?.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <Card className="w-full max-w-sm border border-amber-500/40 shadow-2xl bg-card">
+          <Card className="w-full max-w-sm border border-amber-500/40 bg-amber-500/10">
             <CardHeader className="text-center pt-6 pb-2">
               <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-500 font-bold mb-2">
                 <ShieldAlert className="size-6" />
@@ -1443,8 +1496,14 @@ export function PosDemo() {
             </CardHeader>
             <CardContent className="space-y-4 pb-6">
               <input
-                type="password"
+                type="text"
                 inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
+                name="manager-override-pin-code"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
                 maxLength={4}
                 value={overridePin}
                 onChange={(e) => setOverridePin(e.target.value.replace(/\D/g, ""))}

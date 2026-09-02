@@ -8,8 +8,7 @@ export async function GET(req: NextRequest) {
     const locationId = searchParams.get("locationId") || "loc_downtown";
     const dateStr = searchParams.get("date") || new Date().toISOString().slice(0, 10);
 
-    const authHeader = req.headers.get("Authorization");
-    const staffAuth = await authorizeStaffAction(authHeader, "ANALYTICS_VIEW");
+    const staffAuth = await authorizeStaffAction(req, "ANALYTICS_VIEW");
     if (!staffAuth.authorized) {
       return NextResponse.json(
         { error: "Unauthorized: Analytics or Manager permission required to view reconciliation." },

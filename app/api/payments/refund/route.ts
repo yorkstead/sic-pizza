@@ -14,9 +14,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const authHeader = req.headers.get("Authorization");
     // ITEM_COMP / ITEM_VOID permission or Manager Override required for refund
-    const staffAuth = await authorizeStaffAction(authHeader, "ITEM_COMP", managerOverrideToken);
+    const staffAuth = await authorizeStaffAction(req, "ITEM_COMP", managerOverrideToken);
     if (!staffAuth.authorized) {
       return NextResponse.json(
         { error: "Unauthorized: Manager permission or override required for refunds." },
@@ -29,7 +28,7 @@ export async function POST(req: NextRequest) {
       intentId,
       amountCents: Number(amountCents),
       reason,
-      actorId: staffAuth.session?.employeeId || staffAuth.managerOverride?.managerId || "emp_unknown"
+      actorId: staffAuth.session?.employeeId || "emp_unknown"
     });
 
     return NextResponse.json({ success: true, refund });

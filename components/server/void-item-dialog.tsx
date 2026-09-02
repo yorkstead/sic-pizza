@@ -41,7 +41,7 @@ export function VoidItemDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6">
         <div className="flex items-center justify-between border-b pb-3">
           <div className="flex items-center gap-2">
             <AlertCircle className="size-5 text-destructive" />

@@ -11,8 +11,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing intentId." }, { status: 400 });
     }
 
-    const authHeader = req.headers.get("Authorization");
-    const staffAuth = await authorizeStaffAction(authHeader, "TABLE_VIEW");
+    const staffAuth = await authorizeStaffAction(req, "TABLE_VIEW");
     if (!staffAuth.authorized) {
       return NextResponse.json({ error: "Unauthorized: Staff permission required to capture." }, { status: 403 });
     }

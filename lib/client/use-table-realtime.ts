@@ -65,7 +65,7 @@ export function useTableRealtime({
   }, []);
 
   useEffect(() => {
-    if (!enabled || !token || (!sessionId && !locationId)) {
+    if (!enabled || (!sessionId && !locationId)) {
       return;
     }
 
@@ -79,7 +79,7 @@ export function useTableRealtime({
       if (sessionId) params.set("sessionId", sessionId);
       if (locationId) params.set("locationId", locationId);
       if (lastSeqRef.current > 0) params.set("sinceSeq", String(lastSeqRef.current));
-      params.set("token", token!);
+      if (token) params.set("token", token);
 
       const url = `/api/realtime/events?${params.toString()}`;
 

@@ -53,7 +53,7 @@ export function TransferTableDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-4 backdrop-blur-xs animate-in fade-in">
-      <div className="w-full max-w-lg rounded-2xl border border-border bg-card shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="w-full max-w-lg rounded-2xl border border-border bg-card overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="flex items-center justify-between border-b p-4 sm:p-5 bg-secondary/30">
           <div className="flex items-center gap-2.5">
@@ -85,7 +85,7 @@ export function TransferTableDialog({
               onClick={() => setIsAssistantMode(false)}
               className={`py-1.5 rounded-lg transition ${
                 !isAssistantMode
-                  ? "bg-primary text-primary-foreground shadow-xs"
+                  ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -96,7 +96,7 @@ export function TransferTableDialog({
               onClick={() => setIsAssistantMode(true)}
               className={`py-1.5 rounded-lg transition ${
                 isAssistantMode
-                  ? "bg-primary text-primary-foreground shadow-xs"
+                  ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >

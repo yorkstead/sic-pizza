@@ -62,7 +62,7 @@ export function ConnectivityStatusBar({ queue, onFlush }: ConnectivityStatusBarP
   };
 
   return (
-    <div className="rounded-xl border bg-card text-xs shadow-xs">
+    <div className="rounded-xl border bg-card text-xs">
       <div className="flex flex-wrap items-center justify-between p-2 sm:px-3">
         {/* Left: Connectivity Pill */}
         <div className="flex items-center gap-2">

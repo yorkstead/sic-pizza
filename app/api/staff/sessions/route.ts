@@ -5,8 +5,7 @@ import { projectTableSession } from "@/lib/domain";
 
 export async function GET(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("authorization");
-    const auth = await authorizeStaffAction(authHeader, "TABLE_VIEW");
+    const auth = await authorizeStaffAction(req, "TABLE_VIEW");
     if (!auth.authorized || !auth.session) {
       return NextResponse.json({ error: auth.error || "Unauthorized" }, { status: 403 });
     }
@@ -27,8 +26,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("authorization");
-    const auth = await authorizeStaffAction(authHeader, "TABLE_OPEN");
+    const auth = await authorizeStaffAction(req, "TABLE_OPEN");
     if (!auth.authorized || !auth.session) {
       return NextResponse.json({ error: auth.error || "Unauthorized" }, { status: 403 });
     }
